@@ -1,0 +1,10 @@
+.cache
+build
+node_modules
+.git
+.shopify
+.next
+dist
+scan-artifacts
+prisma/dev.sqlite
+prisma/dev.sqlite-journal
