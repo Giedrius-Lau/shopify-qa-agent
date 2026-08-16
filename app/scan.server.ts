@@ -31,7 +31,7 @@ export async function runEmbeddedComparison(options: {
   const liveBase = new URL(`https://${options.shop}`);
   const pageUrl = new URL(options.pagePath, liveBase);
   if (pageUrl.origin !== liveBase.origin) throw new Error("The page path must belong to the installed shop.");
-  const numericThemeId = (id: string) => id.match(/\/Theme\/(\d+)$/)?.[1];
+  const numericThemeId = (id: string) => id.match(/^gid:\/\/shopify\/(?:OnlineStoreTheme|Theme)\/(\d+)$/)?.[1];
   const baselineId = numericThemeId(options.baselineThemeId);
   const comparisonId = numericThemeId(options.comparisonThemeId);
   if (!baselineId || !comparisonId) throw new Error("Shopify returned an invalid theme identifier.");
