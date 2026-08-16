@@ -1,6 +1,6 @@
 # Match this tag to the Playwright package version in package.json. The image
 # includes Chromium and all Linux libraries required to launch it.
-FROM mcr.microsoft.com/playwright:v1.58.2-noble
+FROM mcr.microsoft.com/playwright:v1.62.1-noble
 
 EXPOSE 3000
 
