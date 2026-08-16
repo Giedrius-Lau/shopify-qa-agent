@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, createHmac, randomUUID } from "node:crypto";
 import path from "node:path";
 import type { PageScanResult, ViewportName } from "../src/domain";
 import { redactUrl } from "../src/normalize";
@@ -15,8 +15,24 @@ export function shopArtifactKey(shop: string): string {
   return createHash("sha256").update(shop).digest("hex").slice(0, 16);
 }
 
-function artifactUrl(page: PageScanResult, scanId: string): PageScanResult {
-  return { ...page, screenshotPath: `/app/artifacts/${scanId}/${path.basename(page.screenshotPath)}` };
+export function artifactSignature(shop: string, scanId: string, filename: string): string {
+  const secret = process.env.SHOPIFY_API_SECRET;
+  if (!secret) throw new Error("SHOPIFY_API_SECRET is required to serve scan screenshots.");
+  return createHmac("sha256", secret).update(`${shop}\n${scanId}\n${filename}`).digest("hex");
+}
+
+function artifactUrl(page: PageScanResult, scanId: string, shop: string): PageScanResult {
+  const filename = path.basename(page.screenshotPath.split("?", 1)[0]);
+  const signature = artifactSignature(shop, scanId, filename);
+  return { ...page, screenshotPath: `/app/artifacts/${scanId}/${filename}?signature=${signature}` };
+}
+
+export function refreshArtifactUrls(result: EmbeddedScanResult, shop: string): EmbeddedScanResult {
+  return {
+    ...result,
+    live: result.live.map((page) => artifactUrl(page, result.scanId, shop)),
+    preview: result.preview.map((page) => artifactUrl(page, result.scanId, shop)),
+  };
 }
 
 export async function runEmbeddedComparison(options: {
@@ -50,8 +66,8 @@ export async function runEmbeddedComparison(options: {
     const splitAt = options.viewports.length;
     const result: EmbeddedScanResult = {
       scanId,
-      live: pages.slice(0, splitAt).map((page) => artifactUrl(page, scanId)),
-      preview: pages.slice(splitAt).map((page) => artifactUrl(page, scanId)),
+      live: pages.slice(0, splitAt).map((page) => artifactUrl(page, scanId, options.shop)),
+      preview: pages.slice(splitAt).map((page) => artifactUrl(page, scanId, options.shop)),
     };
     await prisma.scan.update({ where: { id: scanId }, data: { status: "completed", resultJson: JSON.stringify(result) } });
     return result;
