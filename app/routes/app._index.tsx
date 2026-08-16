@@ -30,7 +30,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { admin, session } = await authenticate.admin(request);
   const themes = await getStoreThemes(admin);
   const recentScans = await prisma.scan.findMany({ where: { shop: session.shop }, orderBy: { createdAt: "desc" }, take: 5, select: { id: true, status: true, createdAt: true, resultJson: true } });
-  const saved = recentScans.find((scan) => scan.status === "completed" && scan.resultJson)?.resultJson;
+  const selectedId = new URL(request.url).searchParams.get("scan");
+  const selectedScan = selectedId ? await prisma.scan.findFirst({ where: { id: selectedId, shop: session.shop, status: "completed" }, select: { resultJson: true } }) : null;
+  const saved = selectedScan?.resultJson ?? recentScans.find((scan) => scan.status === "completed" && scan.resultJson)?.resultJson;
   let initialResult: EmbeddedScanResult | null = null;
   try { initialResult = saved ? refreshArtifactUrls(JSON.parse(saved) as EmbeddedScanResult, session.shop) : null; } catch { initialResult = null; }
   return { liveBase: `https://${session.shop}`, themes, defaultThemeId: themes.find((theme) => theme.role === "MAIN")?.id ?? themes[0]?.id ?? "", recentScans: recentScans.map((scan) => ({ id: scan.id, status: scan.status, createdAt: scan.createdAt })), initialResult };
