@@ -22,21 +22,31 @@ function artifactUrl(page: PageScanResult, scanId: string): PageScanResult {
 export async function runEmbeddedComparison(options: {
   shop: string;
   pagePath: string;
-  previewUrl: string;
+  baselineThemeId: string;
+  baselineThemeRole: string;
+  comparisonThemeId: string;
   viewports: ViewportName[];
   storefrontPassword?: string;
 }): Promise<EmbeddedScanResult> {
   const liveBase = new URL(`https://${options.shop}`);
-  const liveUrl = new URL(options.pagePath, liveBase);
-  if (liveUrl.origin !== liveBase.origin) throw new Error("The live page path must belong to the installed shop.");
+  const pageUrl = new URL(options.pagePath, liveBase);
+  if (pageUrl.origin !== liveBase.origin) throw new Error("The page path must belong to the installed shop.");
+  const numericThemeId = (id: string) => id.match(/\/Theme\/(\d+)$/)?.[1];
+  const baselineId = numericThemeId(options.baselineThemeId);
+  const comparisonId = numericThemeId(options.comparisonThemeId);
+  if (!baselineId || !comparisonId) throw new Error("Shopify returned an invalid theme identifier.");
+  const baselineUrl = new URL(pageUrl);
+  if (options.baselineThemeRole !== "MAIN") baselineUrl.searchParams.set("preview_theme_id", baselineId);
+  const comparisonUrl = new URL(pageUrl);
+  comparisonUrl.searchParams.set("preview_theme_id", comparisonId);
 
   const scanId = randomUUID();
   const artifactDirectory = path.resolve("scan-artifacts", shopArtifactKey(options.shop), scanId);
-  await prisma.scan.create({ data: { id: scanId, shop: options.shop, status: "running", liveUrl: redactUrl(liveUrl.toString()), previewUrl: redactUrl(options.previewUrl), viewports: options.viewports.join(",") } });
+  await prisma.scan.create({ data: { id: scanId, shop: options.shop, status: "running", liveUrl: redactUrl(baselineUrl.toString()), previewUrl: redactUrl(comparisonUrl.toString()), viewports: options.viewports.join(",") } });
 
   try {
     const password = options.storefrontPassword || undefined;
-    const pages = await runScan([liveUrl.toString(), options.previewUrl], options.viewports, artifactDirectory, undefined, [password, password]);
+    const pages = await runScan([baselineUrl.toString(), comparisonUrl.toString()], options.viewports, artifactDirectory, undefined, [password, password]);
     const splitAt = options.viewports.length;
     const result: EmbeddedScanResult = {
       scanId,

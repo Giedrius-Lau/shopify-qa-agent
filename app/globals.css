@@ -9,8 +9,8 @@ h1 { font-size:clamp(42px,7vw,78px); line-height:.98; letter-spacing:-.055em; ma
 .scan-form { border:1px solid var(--line); background:var(--panel); border-radius:16px; padding:24px; }
 .field-grid,.comparison-grid { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
 label span,legend { display:block; font-size:13px; font-weight:700; margin-bottom:9px; }
-input:not([type=checkbox]):not([type=range]) { width:100%; background:var(--bg); border:1px solid var(--line); color:var(--text); padding:14px; border-radius:8px; font-size:14px; outline:none; }
-input:not([type=checkbox]):not([type=range]):focus { border-color:var(--green); }
+input:not([type=checkbox]):not([type=range]),select { width:100%; background:var(--bg); border:1px solid var(--line); color:var(--text); padding:14px; border-radius:8px; font-size:14px; outline:none; }
+input:not([type=checkbox]):not([type=range]):focus,select:focus { border-color:var(--green); }
 input[readonly] { color:var(--muted); }
 .password-field { display:block; max-width:calc(50% - 9px); margin-top:18px; }.password-field em { color:var(--muted); font-weight:400; font-style:normal; }
 .form-footer { display:flex; justify-content:space-between; gap:24px; align-items:end; margin-top:22px; }
