@@ -5,6 +5,7 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { refreshArtifactUrls, runEmbeddedComparison, type EmbeddedScanResult } from "../scan.server";
+import { compareThemeFiles } from "../theme-code.server";
 import { compareIssues, compareMetadata, compareSections, groupIssuesBySection, sectionKey } from "../../src/compare";
 import type { PageScanResult, QaIssue, ViewportName } from "../../src/domain";
 import "../globals.css";
@@ -54,6 +55,11 @@ export const action = async ({ request }: ActionFunctionArgs): Promise<ActionDat
     if (viewports.length === 0) return { ok: false, error: "Select at least one viewport." };
     if (body.storePassword !== undefined && (typeof body.storePassword !== "string" || body.storePassword.length > 256)) return { ok: false, error: "Storefront password is invalid." };
     const result = await runEmbeddedComparison({ shop: session.shop, pagePath: body.pagePath, baselineThemeId: baselineTheme.id, baselineThemeRole: baselineTheme.role, comparisonThemeId: comparisonTheme.id, viewports, storefrontPassword: typeof body.storePassword === "string" ? body.storePassword : undefined });
+    const representativePage = result.preview[0];
+    if (representativePage) {
+      result.codeChanges = await compareThemeFiles(admin, baselineTheme.id, comparisonTheme.id, representativePage.pageType, representativePage.sections);
+      await prisma.scan.update({ where: { id: result.scanId }, data: { resultJson: JSON.stringify(result) } });
+    }
     return { ok: true, result };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Scan failed." };
@@ -94,6 +100,13 @@ function ThemeDelta({ live, preview }: { live: PageScanResult; preview: PageScan
     <div className="delta-grid"><DeltaList title="Needs attention" tone="added" issues={issueDiff.added}/><DeltaList title="Improved" tone="resolved" issues={issueDiff.resolved}/></div></section>;
 }
 
+function CodeChanges({ changes }: { changes: NonNullable<EmbeddedScanResult["codeChanges"]> }) {
+  const pageChanges = changes.filter((change) => change.scope === "current-page");
+  const themeChanges = changes.filter((change) => change.scope === "theme-wide");
+  const list = (items: typeof changes) => items.map((change) => <article className="code-change" key={change.filename}><div><span className={`file-status ${change.status}`}>{change.status}</span><strong>{change.filename}</strong></div><p>{change.summary}</p>{change.affectedSections.length > 0 && <span className="section-map">Section: {change.affectedSections.join(", ")}</span>}</article>);
+  return <section className="code-changes"><div className="delta-summary"><div><span className="eyebrow">Theme code</span><h3>Files behind the visible changes</h3><p>Shopify theme files are compared directly, not inferred from screenshots.</p></div><div className="delta-stats"><span><strong>{pageChanges.length}</strong> on this page</span><span><strong>{themeChanges.length}</strong> elsewhere in theme</span></div></div>{changes.length === 0 ? <p className="empty">No theme code differences found.</p> : <><div className="code-change-group"><h4>Connected to this page or its sections</h4>{pageChanges.length ? list(pageChanges) : <p className="empty">No changed files could be connected to this page.</p>}</div>{themeChanges.length > 0 && <details className="other-code-changes"><summary>{themeChanges.length} other theme file changes</summary><div>{list(themeChanges)}</div></details>}</>}</section>;
+}
+
 export default function Index() {
   const { liveBase, themes, defaultThemeId, recentScans, initialResult } = useLoaderData<typeof loader>();
   const fetcher = useFetcher<typeof action>();
@@ -116,7 +129,7 @@ export default function Index() {
   return <s-page heading="Shopify QA Agent"><div className="qa-main"><header className="hero"><span className="brand">THEME QA</span><h1>Compare one theme against another.</h1><p>Select a baseline theme and an unpublished theme from the installed store. No preview link is required.</p></header>
     <section className="scan-form"><div className="field-grid"><label><span>Installed storefront</span><input value={liveBase} readOnly/></label><label><span>Page path</span><input value={pagePath} onChange={(event) => setPagePath(event.target.value)} placeholder="/products/example"/></label><label><span>Baseline theme</span><select value={baselineThemeId} onChange={(event) => selectBaseline(event.target.value)}>{themes.map((theme) => <option key={theme.id} value={theme.id} disabled={theme.processing}>{theme.name}{theme.role === "MAIN" ? " — Live" : ` — ${theme.role.toLowerCase()}`}{theme.processing ? " (processing)" : ""}</option>)}</select></label><label><span>Unpublished comparison theme</span><select required value={comparisonThemeId} onChange={(event) => setComparisonThemeId(event.target.value)}><option value="">Select an unpublished theme…</option>{comparisonThemes.map((theme) => <option key={theme.id} value={theme.id} disabled={theme.processing}>{theme.name}{theme.processing ? " (processing)" : ""}</option>)}</select></label><label><span>Storefront password <em>optional</em></span><input type="password" autoComplete="off" value={storePassword} onChange={(event) => setStorePassword(event.target.value)} placeholder="Used only if Shopify asks"/></label></div><div className="form-footer"><fieldset><legend>Viewports</legend><label className="check"><input type="checkbox" checked={viewports.includes("desktop")} onChange={() => toggleViewport("desktop")}/> Desktop</label><label className="check"><input type="checkbox" checked={viewports.includes("mobile")} onChange={() => toggleViewport("mobile")}/> Mobile</label></fieldset><button disabled={loading || !baselineThemeId || !comparisonThemeId || viewports.length === 0} onClick={submit}>{loading ? "Scanning…" : "Run comparison"}</button></div><p className="privacy">Theme IDs and storefront passwords are never exposed in reports.</p></section>
     {fetcher.data && !fetcher.data.ok && <div className="error" role="alert">{fetcher.data.error}</div>}{loading && <section className="loading"><div className="loader"/><div><strong>Chromium is scanning both themes</strong><p>This can take a minute.</p></div></section>}
-    {result && <section className="results"><div className="section-heading"><div><span className="eyebrow">Scan complete</span><h2>Theme comparison</h2></div></div>{pairs.map(({ viewport, live, preview }) => live && preview && <section key={viewport} className="viewport-group"><h2>{viewport === "desktop" ? "Desktop view" : "Mobile view"}</h2><VisualComparison live={live} preview={preview}/><ThemeDelta live={live} preview={preview}/></section>)}</section>}
+    {result && <section className="results"><div className="section-heading"><div><span className="eyebrow">Scan complete</span><h2>Theme comparison</h2></div></div>{result.codeChanges && <CodeChanges changes={result.codeChanges}/>} {pairs.map(({ viewport, live, preview }) => live && preview && <section key={viewport} className="viewport-group"><h2>{viewport === "desktop" ? "Desktop view" : "Mobile view"}</h2><VisualComparison live={live} preview={preview}/><ThemeDelta live={live} preview={preview}/></section>)}</section>}
     {recentScans.length > 0 && <details className="recent-scans"><summary>Previous scan activity</summary>{recentScans.map((scan) => <p key={scan.id}>{scan.status === "completed" ? "Completed" : scan.status === "failed" ? "Failed" : "In progress"} · {new Date(scan.createdAt).toLocaleString()}</p>)}</details>}
   </div></s-page>;
 }
