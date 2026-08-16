@@ -1,7 +1,7 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
 client_id = "7e29e563078d867f2f97c36a9bb930c9"
-application_url = "https://shopify.dev/apps/default-app-home"
+application_url = "https://theme-qa-agent.onrender.com"
 embedded = true
 name = "Theme QA Agent"
 
@@ -21,7 +21,7 @@ api_version = "2026-10"
   topics = [ "app/scopes_update" ]
 
 [auth]
-redirect_urls = [ "https://shopify.dev/apps/default-app-home/api/auth" ]
+redirect_urls = [ "https://theme-qa-agent.onrender.com/auth/callback" ]
 
 [build]
 include_config_on_deploy = true
