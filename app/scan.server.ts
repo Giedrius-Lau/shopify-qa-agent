@@ -4,13 +4,14 @@ import type { PageScanResult, ViewportName } from "../src/domain";
 import { redactUrl } from "../src/normalize";
 import { runScan } from "../src/scanner";
 import prisma from "./db.server";
-import type { ThemeCodeChange } from "./theme-code.server";
+import type { CodeAccessibilityIssue, ThemeCodeChange } from "./theme-code.server";
 
 export interface EmbeddedScanResult {
   scanId: string;
   live: PageScanResult[];
   preview: PageScanResult[];
   codeChanges?: ThemeCodeChange[];
+  codeAccessibilityIssues?: CodeAccessibilityIssue[];
 }
 
 export function shopArtifactKey(shop: string): string {

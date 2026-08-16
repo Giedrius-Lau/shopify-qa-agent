@@ -12,6 +12,15 @@ export type ThemeCodeChange = {
   summary: string;
 };
 
+export type CodeAccessibilityIssue = {
+  rule: string;
+  severity: "high" | "medium" | "low";
+  filename: string;
+  line: number;
+  message: string;
+  suggestion: string;
+};
+
 function fileKind(filename: string): ThemeCodeChange["kind"] {
   const folder = filename.split("/", 1)[0];
   return (["templates", "sections", "snippets", "assets", "layout", "config", "locales"] as const).find((item) => item === folder)?.replace(/s$/, "") as ThemeCodeChange["kind"] || "other";
@@ -63,4 +72,41 @@ export function compareThemeFileLists(baseline: ThemeFileSnapshot[], comparison:
 export async function compareThemeFiles(admin: ThemeAdmin, baselineThemeId: string, comparisonThemeId: string, pageType: ShopifyPageType, sections: SectionSnapshot[]): Promise<ThemeCodeChange[]> {
   const [baseline, comparison] = await Promise.all([themeFiles(admin, baselineThemeId), themeFiles(admin, comparisonThemeId)]);
   return compareThemeFileLists(baseline, comparison, pageType, sections);
+}
+
+function lineAt(content: string, index: number): number {
+  return content.slice(0, index).split("\n").length;
+}
+
+export function auditLiquidAccessibility(filename: string, content: string): CodeAccessibilityIssue[] {
+  const issues: CodeAccessibilityIssue[] = [];
+  const addMatches = (pattern: RegExp, create: (match: RegExpExecArray) => Omit<CodeAccessibilityIssue, "filename" | "line"> | null) => {
+    for (const match of content.matchAll(pattern)) { const issue = create(match); if (issue) issues.push({ ...issue, filename, line: lineAt(content, match.index ?? 0) }); }
+  };
+  addMatches(/<img\b[^>]*>/gi, (match) => !/\balt\s*=/i.test(match[0]) ? { rule: "image-alt", severity: "high", message: "Image has no alt attribute.", suggestion: "Add alt text, or alt=\"\" when the image is purely decorative." } : null);
+  addMatches(/\btabindex\s*=\s*["']?([1-9]\d*)["']?/gi, () => ({ rule: "positive-tabindex", severity: "high", message: "Positive tabindex changes the natural keyboard order.", suggestion: "Use tabindex=\"0\" or rely on the document order." }));
+  addMatches(/<video\b[^>]*>([\s\S]*?)<\/video>/gi, (match) => !/<track\b[^>]*kind\s*=\s*["']captions["']/i.test(match[1]) ? { rule: "video-captions", severity: "high", message: "Video has no captions track.", suggestion: "Add a <track kind=\"captions\"> element." } : null);
+  addMatches(/<html\b[^>]*>/gi, (match) => !/\blang\s*=/i.test(match[0]) ? { rule: "document-language", severity: "medium", message: "The HTML element has no language attribute.", suggestion: "Add lang=\"{{ request.locale.iso_code }}\" to the html element." } : null);
+  addMatches(/<(a|button)\b([^>]*)>([\s\S]*?)<\/\1>/gi, (match) => {
+    const attrs = match[2]; const body = match[3].replace(/{[%{][\s\S]*?[}%]%}/g, "").replace(/<[^>]+>/g, "").trim();
+    const named = body || /\baria-label\s*=|\baria-labelledby\s*=|\btitle\s*=/i.test(attrs) || /<img\b[^>]*alt\s*=\s*["'][^"']+["']/i.test(match[3]);
+    return !named ? { rule: "control-name", severity: "high", message: `${match[1].toLowerCase() === "a" ? "Link" : "Button"} may have no accessible name.`, suggestion: "Add visible text or an aria-label that describes the action." } : null;
+  });
+  return issues;
+}
+
+export async function auditChangedThemeAccessibility(admin: ThemeAdmin, themeId: string, filenames: string[]): Promise<CodeAccessibilityIssue[]> {
+  const targets = filenames.filter((filename) => filename.endsWith(".liquid"));
+  const issues: CodeAccessibilityIssue[] = [];
+  for (let index = 0; index < targets.length; index += 50) {
+    const response = await admin.graphql(`#graphql
+      query ThemeQaAccessibilityFiles($themeId: ID!, $filenames: [String!]!) {
+        theme(id: $themeId) { files(first: 50, filenames: $filenames) { nodes { filename body { ... on OnlineStoreThemeFileBodyText { content } } } } }
+      }
+    `, { variables: { themeId, filenames: targets.slice(index, index + 50) } });
+    const payload = await response.json() as { data?: { theme?: { files?: { nodes?: Array<{ filename: string; body?: { content?: string } }> } } }; errors?: Array<{ message: string }> };
+    if (payload.errors?.length) throw new Error(payload.errors.map((error) => error.message).join(" "));
+    for (const file of payload.data?.theme?.files?.nodes ?? []) if (file.body?.content) issues.push(...auditLiquidAccessibility(file.filename, file.body.content));
+  }
+  return issues;
 }

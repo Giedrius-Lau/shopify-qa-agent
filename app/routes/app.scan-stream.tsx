@@ -2,7 +2,7 @@ import type { ActionFunctionArgs } from "react-router";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { runEmbeddedComparison } from "../scan.server";
-import { compareThemeFiles } from "../theme-code.server";
+import { auditChangedThemeAccessibility, compareThemeFiles } from "../theme-code.server";
 import { getStoreThemes } from "../themes.server";
 import type { ShopifyPageType, ViewportName } from "../../src/domain";
 
@@ -38,6 +38,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         send({ type: "progress", percent: 84, message: "Comparing Shopify theme files" });
         const representativePage = result.preview[0];
         result.codeChanges = await compareThemeFiles(admin, baselineTheme.id, comparisonTheme.id, representativePage?.pageType ?? pageTypeFromPath(body.pagePath), representativePage?.sections ?? []);
+        if (codeOnly) {
+          send({ type: "progress", percent: 93, message: "Checking changed code for accessibility" });
+          result.codeAccessibilityIssues = await auditChangedThemeAccessibility(admin, comparisonTheme.id, result.codeChanges.filter((change) => change.status !== "removed").map((change) => change.filename));
+        }
         await prisma.scan.update({ where: { id: result.scanId }, data: { resultJson: JSON.stringify(result) } });
         send({ type: "progress", percent: 100, message: "Report ready" });
         send({ type: "result", result });
