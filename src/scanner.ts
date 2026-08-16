@@ -108,9 +108,12 @@ export async function scanViewport(browser: Browser, url: string, viewport: View
       const type = section.dataset.sectionType || section.getAttribute("data-section-type");
       const name = type || heading || id.replace(/^shopify-section-(template--[^_]+__)?/, "").replaceAll("-", " ");
       const structure = Array.from(section.querySelectorAll<HTMLElement>("*")).map((element) => `${element.tagName.toLowerCase()}.${[...element.classList].sort().join(".")}[role=${element.getAttribute("role") || ""}]`).join("|");
-      return { id, name, index, imageCount: section.querySelectorAll("img,[data-src],[data-bgset]").length, headingCount: section.querySelectorAll("h1,h2,h3,h4,h5,h6").length, buttonCount: section.querySelectorAll('button,[role="button"]').length, linkCount: section.querySelectorAll("a[href]").length, textLength: (section.innerText || "").trim().length, structure };
+      const rect = section.getBoundingClientRect();
+      const bounds = { x: rect.left + window.scrollX, y: rect.top + window.scrollY, width: rect.width, height: rect.height };
+      return { id, name, index, imageCount: section.querySelectorAll("img,[data-src],[data-bgset]").length, headingCount: section.querySelectorAll("h1,h2,h3,h4,h5,h6").length, buttonCount: section.querySelectorAll('button,[role="button"]').length, linkCount: section.querySelectorAll("a[href]").length, textLength: (section.innerText || "").trim().length, structure, bounds };
     }));
     const sections: SectionSnapshot[] = rawSections.map(({ structure, ...section }) => ({ ...section, structureFingerprint: sectionFingerprint(structure) }));
+    const pageHeight = await page.evaluate(() => Math.max(document.documentElement.scrollHeight, document.body.scrollHeight));
     if (!metadata.title) issues.push({ type: "seo", severity: "high", rule: "missing-title", message: "Page is missing a title" });
     if (!metadata.description) issues.push({ type: "seo", severity: "medium", rule: "missing-meta-description", message: "Page is missing a meta description" });
     if (metadata.h1Count !== 1) issues.push({ type: "dom", severity: "medium", rule: "h1-count", message: `Expected one H1, found ${metadata.h1Count}`, evidence: { count: metadata.h1Count } });
@@ -145,7 +148,7 @@ export async function scanViewport(browser: Browser, url: string, viewport: View
     const screenshotPath = path.resolve(artifactDirectory, `${artifactStem}-${viewport}.png`);
     await page.screenshot({ path: screenshotPath, fullPage: true });
     const redactedFinalUrl = redactUrl(finalUrl);
-    return { requestedUrl: redactUrl(url), finalUrl: redactedFinalUrl, viewport, viewportSize: VIEWPORTS[viewport], pageType, sections, startedAt: new Date(started).toISOString(), durationMs: Date.now() - started, screenshotPath, metadata: { ...metadata, canonical: metadata.canonical ? redactUrl(metadata.canonical) : null }, issues: normalizeIssues(issues, redactedFinalUrl) };
+    return { requestedUrl: redactUrl(url), finalUrl: redactedFinalUrl, viewport, viewportSize: VIEWPORTS[viewport], pageHeight, pageType, sections, startedAt: new Date(started).toISOString(), durationMs: Date.now() - started, screenshotPath, metadata: { ...metadata, canonical: metadata.canonical ? redactUrl(metadata.canonical) : null }, issues: normalizeIssues(issues, redactedFinalUrl) };
   } finally {
     await context.close();
   }

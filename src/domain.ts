@@ -24,6 +24,7 @@ export interface SectionSnapshot {
   linkCount: number;
   textLength: number;
   structureFingerprint: string;
+  bounds?: { x: number; y: number; width: number; height: number };
 }
 
 export interface PageMetadata {
@@ -40,6 +41,7 @@ export interface PageScanResult {
   finalUrl: string;
   viewport: ViewportName;
   viewportSize: { width: number; height: number };
+  pageHeight?: number;
   pageType: ShopifyPageType;
   sections: SectionSnapshot[];
   startedAt: string;
