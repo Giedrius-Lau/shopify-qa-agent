@@ -18,6 +18,7 @@ fieldset { display:flex; gap:18px; border:0; padding:0; margin:0; }
 .check { color:var(--muted); font-size:14px; display:flex; align-items:center; gap:8px; }.check input { accent-color:var(--green); }
 button { border:0; border-radius:8px; padding:13px 22px; background:var(--green); color:#fff; font-weight:800; cursor:pointer; } button:disabled { opacity:.5; cursor:not-allowed; }
 .privacy { color:var(--muted); font-size:12px; margin:16px 0 0; }
+.scan-mode { display:flex; align-items:start; gap:10px; margin-top:20px; padding:14px; border:1px solid var(--line); border-radius:9px; background:var(--bg); }.scan-mode input { margin-top:3px; accent-color:var(--green); }.scan-mode label { cursor:pointer; }.scan-mode strong,.scan-mode small { display:block; }.scan-mode small { margin-top:3px; color:var(--muted); font-weight:400; }
 .error,.loading { margin-top:20px; padding:18px; border-radius:10px; border:1px solid var(--line); background:var(--panel); }.error { border-color:var(--critical); }
 .loading { display:flex; gap:14px; align-items:center; }.loading p { margin:4px 0 0; color:var(--muted); }
 .loader { width:22px; height:22px; border:2px solid var(--line); border-top-color:var(--green); border-radius:50%; animation:spin .8s linear infinite; } @keyframes spin { to{transform:rotate(360deg)} }

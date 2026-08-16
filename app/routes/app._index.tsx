@@ -1,31 +1,17 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import type { ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs } from "react-router";
-import { useFetcher, useLoaderData, useRouteError } from "react-router";
+import { useLoaderData, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { refreshArtifactUrls, runEmbeddedComparison, type EmbeddedScanResult } from "../scan.server";
 import { compareThemeFiles } from "../theme-code.server";
+import { getStoreThemes } from "../themes.server";
 import { compareIssues, compareMetadata, compareSections, groupIssuesBySection, sectionKey } from "../../src/compare";
 import type { PageScanResult, QaIssue, ViewportName } from "../../src/domain";
 import "../globals.css";
 
 type ActionData = { ok: true; result: EmbeddedScanResult } | { ok: false; error: string };
-type StoreTheme = { id: string; name: string; role: string; processing: boolean };
-type ThemeAdmin = { graphql: (query: string) => Promise<Response> };
-
-async function getStoreThemes(admin: ThemeAdmin): Promise<StoreTheme[]> {
-  const response = await admin.graphql(`#graphql
-    query ThemeQaThemes {
-      themes(first: 50) {
-        nodes { id name role processing }
-      }
-    }
-  `);
-  const payload = await response.json() as { data?: { themes?: { nodes?: StoreTheme[] } }; errors?: Array<{ message: string }> };
-  if (payload.errors?.length) throw new Error(payload.errors.map((error) => error.message).join(" "));
-  return payload.data?.themes?.nodes ?? [];
-}
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { admin, session } = await authenticate.admin(request);
@@ -111,29 +97,23 @@ function CodeChanges({ changes }: { changes: NonNullable<EmbeddedScanResult["cod
   return <section className="code-changes"><div className="delta-summary"><div><span className="eyebrow">Theme code</span><h3>Files behind the visible changes</h3><p>Shopify theme files are compared directly, not inferred from screenshots.</p></div><div className="delta-stats"><span><strong>{pageChanges.length}</strong> on this page</span><span><strong>{themeChanges.length}</strong> elsewhere in theme</span></div></div>{changes.length === 0 ? <p className="empty">No theme code differences found.</p> : <><div className="code-change-group"><h4>Connected to this page or its sections</h4>{pageChanges.length ? list(pageChanges) : <p className="empty">No changed files could be connected to this page.</p>}</div>{themeChanges.length > 0 && <details className="other-code-changes"><summary>{themeChanges.length} other theme file changes</summary><div>{list(themeChanges)}</div></details>}</>}</section>;
 }
 
-function ScanProgress({ viewports }: { viewports: ViewportName[] }) {
-  const [elapsed, setElapsed] = useState(0);
-  useEffect(() => {
-    const started = Date.now();
-    const timer = window.setInterval(() => setElapsed(Math.floor((Date.now() - started) / 1000)), 500);
-    return () => window.clearInterval(timer);
-  }, []);
-  const expected = Math.max(35, viewports.length * 30);
-  const percent = Math.min(92, Math.round(elapsed / expected * 100));
-  const phase = percent < 15 ? "Opening both themes" : percent < 65 ? `Checking ${viewports.join(" and ")} views` : percent < 85 ? "Comparing sections and theme files" : "Preparing your report";
-  return <section className="loading scan-progress" aria-live="polite"><div className="progress-copy"><div><strong>Chromium is scanning both themes</strong><span>{percent}%</span></div><p>{phase} · {elapsed}s elapsed</p><div className="progress-track" role="progressbar" aria-label="Theme scan progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}><span style={{ width: `${percent}%` }}/></div></div></section>;
+function ScanProgress({ percent, message, codeOnly }: { percent: number; message: string; codeOnly: boolean }) {
+  return <section className="loading scan-progress" aria-live="polite"><div className="progress-copy"><div><strong>{codeOnly ? "Comparing theme code" : "Chromium is scanning both themes"}</strong><span>{percent}%</span></div><p>{message}</p><div className="progress-track" role="progressbar" aria-label="Theme scan progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}><span style={{ width: `${percent}%` }}/></div></div></section>;
 }
 
 export default function Index() {
   const { liveBase, themes, defaultThemeId, recentScans, initialResult } = useLoaderData<typeof loader>();
-  const fetcher = useFetcher<typeof action>();
   const [pagePath, setPagePath] = useState("/");
   const [baselineThemeId, setBaselineThemeId] = useState(defaultThemeId);
   const [comparisonThemeId, setComparisonThemeId] = useState("");
   const [storePassword, setStorePassword] = useState("");
   const [viewports, setViewports] = useState<ViewportName[]>(["desktop", "mobile"]);
-  const result = fetcher.data?.ok ? fetcher.data.result : initialResult;
-  const loading = fetcher.state !== "idle";
+  const [codeOnly, setCodeOnly] = useState(false);
+  const [scanResult, setScanResult] = useState<EmbeddedScanResult | null>(null);
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<{ percent: number; message: string } | null>(null);
+  const result = scanResult ?? initialResult;
+  const loading = progress !== null;
   const pairs = useMemo(() => result ? viewports.map((viewport) => ({ viewport, live: result.live.find((page) => page.viewport === viewport), preview: result.preview.find((page) => page.viewport === viewport) })) : [], [result, viewports]);
   const toggleViewport = (viewport: ViewportName) => setViewports((current) => current.includes(viewport) ? current.filter((item) => item !== viewport) : [...current, viewport]);
   const comparisonThemes = themes.filter((theme) => theme.role === "UNPUBLISHED" && theme.id !== baselineThemeId);
@@ -141,11 +121,19 @@ export default function Index() {
     setBaselineThemeId(themeId);
     if (themeId === comparisonThemeId) setComparisonThemeId("");
   };
-  const submit = () => fetcher.submit({ pagePath, baselineThemeId, comparisonThemeId, storePassword, viewports }, { method: "POST", encType: "application/json" });
+  const submit = async () => {
+    setScanError(null); setProgress({ percent: 1, message: "Starting comparison" }); setScanResult(null);
+    try {
+      const response = await fetch(`/app/scan-stream${window.location.search}`, { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ pagePath, baselineThemeId, comparisonThemeId, storePassword, viewports, codeOnly }) });
+      if (!response.ok || !response.body) throw new Error(`Scan request failed (${response.status}).`);
+      const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = "";
+      for (;;) { const { value, done } = await reader.read(); buffer += decoder.decode(value, { stream: !done }); const lines = buffer.split("\n"); buffer = lines.pop() ?? ""; for (const line of lines) { if (!line) continue; const event = JSON.parse(line) as { type: string; percent?: number; message?: string; error?: string; result?: EmbeddedScanResult }; if (event.type === "progress") setProgress({ percent: event.percent ?? 0, message: event.message ?? "Working" }); if (event.type === "result" && event.result) setScanResult(event.result); if (event.type === "error") throw new Error(event.error || "Scan failed."); } if (done) break; }
+    } catch (error) { setScanError(error instanceof Error ? error.message : "Scan failed."); } finally { setProgress(null); }
+  };
 
   return <s-page heading="Shopify QA Agent"><div className="qa-main"><header className="hero"><span className="brand">THEME QA</span><h1>Compare one theme against another.</h1><p>Select a baseline theme and an unpublished theme from the installed store. No preview link is required.</p></header>
-    <section className="scan-form"><div className="field-grid"><label><span>Installed storefront</span><input value={liveBase} readOnly/></label><label><span>Page path</span><input value={pagePath} onChange={(event) => setPagePath(event.target.value)} placeholder="/products/example"/></label><label><span>Baseline theme</span><select value={baselineThemeId} onChange={(event) => selectBaseline(event.target.value)}>{themes.map((theme) => <option key={theme.id} value={theme.id} disabled={theme.processing}>{theme.name}{theme.role === "MAIN" ? " — Live" : ` — ${theme.role.toLowerCase()}`}{theme.processing ? " (processing)" : ""}</option>)}</select></label><label><span>Unpublished comparison theme</span><select required value={comparisonThemeId} onChange={(event) => setComparisonThemeId(event.target.value)}><option value="">Select an unpublished theme…</option>{comparisonThemes.map((theme) => <option key={theme.id} value={theme.id} disabled={theme.processing}>{theme.name}{theme.processing ? " (processing)" : ""}</option>)}</select></label><label><span>Storefront password <em>optional</em></span><input type="password" autoComplete="off" value={storePassword} onChange={(event) => setStorePassword(event.target.value)} placeholder="Used only if Shopify asks"/></label></div><div className="form-footer"><fieldset><legend>Viewports</legend><label className="check"><input type="checkbox" checked={viewports.includes("desktop")} onChange={() => toggleViewport("desktop")}/> Desktop</label><label className="check"><input type="checkbox" checked={viewports.includes("mobile")} onChange={() => toggleViewport("mobile")}/> Mobile</label></fieldset><button disabled={loading || !baselineThemeId || !comparisonThemeId || viewports.length === 0} onClick={submit}>{loading ? "Scanning…" : "Run comparison"}</button></div><p className="privacy">Theme IDs and storefront passwords are never exposed in reports.</p></section>
-    {fetcher.data && !fetcher.data.ok && <div className="error" role="alert">{fetcher.data.error}</div>}{loading && <ScanProgress viewports={viewports}/>}
+    <section className="scan-form"><div className="field-grid"><label><span>Installed storefront</span><input value={liveBase} readOnly/></label><label><span>Page path</span><input value={pagePath} onChange={(event) => setPagePath(event.target.value)} placeholder="/products/example"/></label><label><span>Baseline theme</span><select value={baselineThemeId} onChange={(event) => selectBaseline(event.target.value)}>{themes.map((theme) => <option key={theme.id} value={theme.id} disabled={theme.processing}>{theme.name}{theme.role === "MAIN" ? " — Live" : ` — ${theme.role.toLowerCase()}`}{theme.processing ? " (processing)" : ""}</option>)}</select></label><label><span>Unpublished comparison theme</span><select required value={comparisonThemeId} onChange={(event) => setComparisonThemeId(event.target.value)}><option value="">Select an unpublished theme…</option>{comparisonThemes.map((theme) => <option key={theme.id} value={theme.id} disabled={theme.processing}>{theme.name}{theme.processing ? " (processing)" : ""}</option>)}</select></label>{!codeOnly && <label><span>Storefront password <em>optional</em></span><input type="password" autoComplete="off" value={storePassword} onChange={(event) => setStorePassword(event.target.value)} placeholder="Used only if Shopify asks"/></label>}</div><div className="scan-mode"><input id="code-only" type="checkbox" checked={codeOnly} onChange={(event) => setCodeOnly(event.target.checked)}/><label htmlFor="code-only"><strong>Code-only scan</strong><small>Skip Chromium, screenshots, accessibility, links, and visual checks.</small></label></div><div className="form-footer">{!codeOnly && <fieldset><legend>Viewports</legend><label className="check"><input type="checkbox" checked={viewports.includes("desktop")} onChange={() => toggleViewport("desktop")}/> Desktop</label><label className="check"><input type="checkbox" checked={viewports.includes("mobile")} onChange={() => toggleViewport("mobile")}/> Mobile</label></fieldset>}<button disabled={loading || !baselineThemeId || !comparisonThemeId || (!codeOnly && viewports.length === 0)} onClick={submit}>{loading ? "Scanning…" : codeOnly ? "Compare code" : "Run comparison"}</button></div><p className="privacy">Theme IDs and storefront passwords are never exposed in reports.</p></section>
+    {scanError && <div className="error" role="alert">{scanError}</div>}{progress && <ScanProgress percent={progress.percent} message={progress.message} codeOnly={codeOnly}/>}
     {result && <section className="results"><div className="section-heading"><div><span className="eyebrow">Scan complete</span><h2>Theme comparison</h2></div></div>{result.codeChanges && <CodeChanges changes={result.codeChanges}/>} {pairs.map(({ viewport, live, preview }) => live && preview && <section key={viewport} className="viewport-group"><h2>{viewport === "desktop" ? "Desktop view" : "Mobile view"}</h2><VisualComparison live={live} preview={preview}/><ThemeDelta live={live} preview={preview}/></section>)}</section>}
     {recentScans.length > 0 && <details className="recent-scans"><summary>Previous scan activity</summary>{recentScans.map((scan) => <p key={scan.id}>{scan.status === "completed" ? "Completed" : scan.status === "failed" ? "Failed" : "In progress"} · {new Date(scan.createdAt).toLocaleString()}</p>)}</details>}
   </div></s-page>;

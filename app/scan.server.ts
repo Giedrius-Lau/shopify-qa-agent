@@ -45,6 +45,8 @@ export async function runEmbeddedComparison(options: {
   comparisonThemeId: string;
   viewports: ViewportName[];
   storefrontPassword?: string;
+  skipPageScan?: boolean;
+  onProgress?: (message: string, percent: number) => void;
 }): Promise<EmbeddedScanResult> {
   const liveBase = new URL(`https://${options.shop}`);
   const pageUrl = new URL(options.pagePath, liveBase);
@@ -64,7 +66,7 @@ export async function runEmbeddedComparison(options: {
 
   try {
     const password = options.storefrontPassword || undefined;
-    const pages = await runScan([baselineUrl.toString(), comparisonUrl.toString()], options.viewports, artifactDirectory, undefined, [password, password]);
+    const pages = options.skipPageScan ? [] : await runScan([baselineUrl.toString(), comparisonUrl.toString()], options.viewports, artifactDirectory, (message, completed, total) => options.onProgress?.(message, 10 + Math.round(completed / total * 70)), [password, password]);
     const splitAt = options.viewports.length;
     const result: EmbeddedScanResult = {
       scanId,

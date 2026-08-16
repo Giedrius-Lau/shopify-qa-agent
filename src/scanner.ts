@@ -168,13 +168,15 @@ export async function scanViewport(browser: Browser, url: string, viewport: View
   }
 }
 
-export async function runScan(urls: string[], viewports: ViewportName[], artifactDirectory: string, onProgress?: (message: string) => void, storefrontPasswords: Array<string | undefined> = []): Promise<PageScanResult[]> {
+export async function runScan(urls: string[], viewports: ViewportName[], artifactDirectory: string, onProgress?: (message: string, completed: number, total: number) => void, storefrontPasswords: Array<string | undefined> = []): Promise<PageScanResult[]> {
   const browser = await chromium.launch({ headless: true });
   try {
     const pages: PageScanResult[] = [];
+    const total = urls.length * viewports.length;
     for (const [urlIndex, url] of urls.entries()) for (const viewport of viewports) {
-      onProgress?.(`Scanning ${redactUrl(url)} (${viewport})...`);
+      onProgress?.(`Scanning ${urlIndex === 0 ? "baseline" : "comparison"} theme on ${viewport}`, pages.length, total);
       pages.push(await scanViewport(browser, url, viewport, artifactDirectory, `page-${urlIndex + 1}`, storefrontPasswords[urlIndex]));
+      onProgress?.(`Completed ${urlIndex === 0 ? "baseline" : "comparison"} ${viewport}`, pages.length, total);
     }
     return pages;
   } finally {
