@@ -78,7 +78,9 @@ export async function scanViewport(browser: Browser, url: string, viewport: View
     });
     const page = await context.newPage();
     page.on("console", (message: ConsoleMessage) => {
-      if (message.type() === "error" && !/^Failed to load resource:/i.test(message.text())) issues.push({ type: "console", severity: "medium", rule: "console-error", message: message.text(), evidence: { location: { ...message.location(), url: redactUrl(message.location().url) } } });
+      const text = message.text();
+      const previewNoise = /Framing ['"]https:\/\/shop\.app\//i.test(text) && /frame-ancestors/i.test(text);
+      if (message.type() === "error" && !/^Failed to load resource:/i.test(text) && !previewNoise) issues.push({ type: "console", severity: "medium", rule: "console-error", message: text, evidence: { location: { ...message.location(), url: redactUrl(message.location().url) } } });
     });
     page.on("requestfailed", (request: Request) => issues.push({ type: "network", severity: "high", rule: "request-failed", message: `${request.method()} request failed`, evidence: { url: redactUrl(request.url()), failure: request.failure()?.errorText, resourceType: request.resourceType() } }));
     page.on("response", (response) => {
@@ -87,7 +89,15 @@ export async function scanViewport(browser: Browser, url: string, viewport: View
 
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 });
     await unlockShopifyStorefront(page, url, storefrontPassword);
-    await page.waitForTimeout(1_000);
+    await page.waitForLoadState("networkidle", { timeout: 5_000 }).catch(() => null);
+    await page.evaluate(async () => {
+      await document.fonts?.ready;
+      await Promise.all(Array.from(document.images).map((image) => image.complete ? Promise.resolve() : new Promise<void>((resolve) => {
+        image.addEventListener("load", () => resolve(), { once: true });
+        image.addEventListener("error", () => resolve(), { once: true });
+        setTimeout(resolve, 2_000);
+      })));
+    });
     await assertSafePublicUrl(page.url());
     const finalUrl = page.url();
     const pageInfo = await page.evaluate<PageMetadata & { bodyClasses: string; hasProductForm: boolean }>(() => ({
@@ -107,7 +117,11 @@ export async function scanViewport(browser: Browser, url: string, viewport: View
       const heading = section.querySelector<HTMLElement>("h1,h2,h3")?.innerText.trim();
       const type = section.dataset.sectionType || section.getAttribute("data-section-type");
       const name = type || heading || id.replace(/^shopify-section-(template--[^_]+__)?/, "").replaceAll("-", " ");
-      const structure = Array.from(section.querySelectorAll<HTMLElement>("*")).map((element) => `${element.tagName.toLowerCase()}.${[...element.classList].sort().join(".")}[role=${element.getAttribute("role") || ""}]`).join("|");
+      const structure = Array.from(section.querySelectorAll<HTMLElement>("*")).filter((element) => !["SCRIPT", "STYLE", "NOSCRIPT", "PATH"].includes(element.tagName)).map((element) => {
+        let depth = 0;
+        for (let parent = element.parentElement; parent && parent !== section; parent = parent.parentElement) depth += 1;
+        return `${depth}:${element.tagName.toLowerCase()}[role=${element.getAttribute("role") || ""}]`;
+      }).join("|");
       const rect = section.getBoundingClientRect();
       const bounds = { x: rect.left + window.scrollX, y: rect.top + window.scrollY, width: rect.width, height: rect.height };
       return { id, name, index, imageCount: section.querySelectorAll("img,[data-src],[data-bgset]").length, headingCount: section.querySelectorAll("h1,h2,h3,h4,h5,h6").length, buttonCount: section.querySelectorAll('button,[role="button"]').length, linkCount: section.querySelectorAll("a[href]").length, textLength: (section.innerText || "").trim().length, structure, bounds };

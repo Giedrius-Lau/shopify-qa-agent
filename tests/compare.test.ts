@@ -12,6 +12,12 @@ test("compares issues independently of fingerprint and preview query tokens", ()
   assert.deepEqual(compareIssues([live, issue("resolved", "r")], [preview, issue("added", "a")]), { added: [issue("added", "a")], resolved: [issue("resolved", "r")], unchanged: [preview] });
 });
 
+test("normalizes Shopify-generated selector ids between themes", () => {
+  const live = { ...issue("color-contrast", "a"), selector: "#shopify-section-template--123__featured .card" };
+  const preview = { ...issue("color-contrast", "b"), selector: "#shopify-section-template--987__featured .card" };
+  assert.equal(issueComparisonKey(live), issueComparisonKey(preview));
+});
+
 test("matches Shopify sections and reports metric and structure changes", () => {
   const base = { name: "Featured collection", index: 1, headingCount: 1, buttonCount: 0, linkCount: 4, textLength: 100 };
   const live = { ...base, id: "shopify-section-template--1__featured_collection", imageCount: 4, structureFingerprint: "a" };

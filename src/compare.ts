@@ -12,7 +12,8 @@ function resourceIdentity(issue: QaIssue): string | null {
 }
 
 export function issueComparisonKey(issue: QaIssue): string {
-  return JSON.stringify({ type: issue.type, rule: issue.rule, selector: issue.selector ?? null, message: issue.message, resource: resourceIdentity(issue) });
+  const selector = issue.selector?.replace(/template--\d+/g, "template--id").replace(/shopify-section-[a-z0-9_-]*\d[a-z0-9_-]*/gi, "shopify-section-dynamic");
+  return JSON.stringify({ type: issue.type, rule: issue.rule, selector: selector ?? null, message: issue.message, resource: resourceIdentity(issue) });
 }
 
 export function compareIssues(live: QaIssue[], preview: QaIssue[]) {
@@ -38,7 +39,7 @@ export function sectionKey(id: string, name: string): string {
 export function compareSections(live: SectionSnapshot[], preview: SectionSnapshot[]) {
   const liveByKey = new Map(live.map((section) => [sectionKey(section.id, section.name), section]));
   const previewByKey = new Map(preview.map((section) => [sectionKey(section.id, section.name), section]));
-  const fields = ["imageCount", "headingCount", "buttonCount", "linkCount", "textLength"] as const;
+  const fields = ["imageCount", "headingCount", "buttonCount", "linkCount"] as const;
   const changed = preview.flatMap((previewSection) => {
     const liveSection = liveByKey.get(sectionKey(previewSection.id, previewSection.name));
     if (!liveSection) return [];
