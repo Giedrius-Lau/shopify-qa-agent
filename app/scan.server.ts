@@ -48,6 +48,9 @@ export async function runEmbeddedComparison(options: {
   viewports: ViewportName[];
   storefrontPassword?: string;
   skipPageScan?: boolean;
+  scanId?: string;
+  existingRecord?: boolean;
+  deferCompletion?: boolean;
   onProgress?: (message: string, percent: number) => void;
 }): Promise<EmbeddedScanResult> {
   const liveBase = new URL(`https://${options.shop}`);
@@ -62,9 +65,13 @@ export async function runEmbeddedComparison(options: {
   const comparisonUrl = new URL(pageUrl);
   comparisonUrl.searchParams.set("preview_theme_id", comparisonId);
 
-  const scanId = randomUUID();
+  const scanId = options.scanId ?? randomUUID();
   const artifactDirectory = path.resolve("scan-artifacts", shopArtifactKey(options.shop), scanId);
-  await prisma.scan.create({ data: { id: scanId, shop: options.shop, status: "running", liveUrl: redactUrl(baselineUrl.toString()), previewUrl: redactUrl(comparisonUrl.toString()), viewports: options.viewports.join(",") } });
+  if (options.existingRecord) {
+    await prisma.scan.update({ where: { id: scanId }, data: { status: "running", error: null } });
+  } else {
+    await prisma.scan.create({ data: { id: scanId, shop: options.shop, status: "running", liveUrl: redactUrl(baselineUrl.toString()), previewUrl: redactUrl(comparisonUrl.toString()), viewports: options.viewports.join(",") } });
+  }
 
   try {
     const password = options.storefrontPassword || undefined;
@@ -79,7 +86,7 @@ export async function runEmbeddedComparison(options: {
       live: pages.slice(0, splitAt).map((page) => artifactUrl(page, scanId, options.shop)),
       preview: pages.slice(splitAt).map((page) => artifactUrl(page, scanId, options.shop)),
     };
-    await prisma.scan.update({ where: { id: scanId }, data: { status: "completed", resultJson: JSON.stringify(result) } });
+    await prisma.scan.update({ where: { id: scanId }, data: { status: options.deferCompletion ? "running" : "completed", resultJson: JSON.stringify(result) } });
     return result;
   } catch (error) {
     await prisma.scan.update({ where: { id: scanId }, data: { status: "failed", error: error instanceof Error ? error.message : "Scan failed" } });

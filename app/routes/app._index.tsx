@@ -129,9 +129,17 @@ export default function Index() {
     setScanError(null); setProgress({ percent: 1, message: "Starting comparison" }); setScanResult(null);
     try {
       const response = await fetch(`/app/scan-stream${window.location.search}`, { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ pagePath, baselineThemeId, comparisonThemeId, storePassword, viewports, codeOnly }) });
-      if (!response.ok || !response.body) throw new Error(`Scan request failed (${response.status}).`);
-      const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = "";
-      for (;;) { const { value, done } = await reader.read(); buffer += decoder.decode(value, { stream: !done }); const lines = buffer.split("\n"); buffer = lines.pop() ?? ""; for (const line of lines) { if (!line) continue; const event = JSON.parse(line) as { type: string; percent?: number; message?: string; error?: string; result?: EmbeddedScanResult }; if (event.type === "progress") setProgress({ percent: event.percent ?? 0, message: event.message ?? "Working" }); if (event.type === "result" && event.result) setScanResult(event.result); if (event.type === "error") throw new Error(event.error || "Scan failed."); } if (done) break; }
+      const queued = await response.json() as { scanId?: string; error?: string };
+      if (!response.ok || !queued.scanId) throw new Error(queued.error || `Scan request failed (${response.status}).`);
+      for (;;) {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        const statusResponse = await fetch(`/app/scan-stream?scanId=${encodeURIComponent(queued.scanId)}`, { credentials: "same-origin", cache: "no-store" });
+        const status = await statusResponse.json() as { status?: string; progress?: number; message?: string; error?: string | null; result?: EmbeddedScanResult };
+        if (!statusResponse.ok) throw new Error(status.error || "Could not check scan progress.");
+        setProgress({ percent: status.progress ?? 1, message: status.message ?? "Working" });
+        if (status.status === "completed" && status.result) { setScanResult(status.result); break; }
+        if (status.status === "failed") throw new Error(status.error || "Scan failed.");
+      }
     } catch (error) { setScanError(error instanceof Error ? error.message : "Scan failed."); } finally { setProgress(null); }
   };
 
