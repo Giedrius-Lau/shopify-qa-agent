@@ -11,7 +11,7 @@
     "config:use": "shopify app config use",
     "env": "shopify app env",
     "start": "react-router-serve ./build/server/index.js",
-    "docker-start": "node scripts/start-production.mjs",
+    "docker-start": "node scripts/check-production-env.mjs && node scripts/start-production.mjs",
     "setup": "npm run db:migrate",
     "db:migrate": "prisma migrate deploy",
     "lint": "eslint --ignore-path .gitignore --cache --cache-location ./node_modules/.cache/eslint .",
@@ -21,6 +21,7 @@
     "vite": "vite",
     "typecheck": "react-router typegen && tsc --noEmit",
     "test": "tsx --test tests/**/*.test.ts",
+    "verify:prepush": "npm run typecheck && npm run lint && npm test && npm run build && node scripts/smoke-server.mjs",
     "scan": "tsx src/cli.ts"
   },
   "type": "module",

@@ -10,6 +10,7 @@ ENV NODE_ENV=production
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
 COPY package.json package-lock.json* ./
+COPY prisma ./prisma
 
 RUN npm ci
 
