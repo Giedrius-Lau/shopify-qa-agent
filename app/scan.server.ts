@@ -4,6 +4,7 @@ import type { PageScanResult, ViewportName } from "../src/domain";
 import { redactUrl } from "../src/normalize";
 import { runScan } from "../src/scanner";
 import prisma from "./db.server";
+import { artifactObjectKey, persistArtifact } from "./artifact-storage.server";
 import type { CodeAccessibilityIssue, ThemeCodeChange } from "./theme-code.server";
 
 export interface EmbeddedScanResult {
@@ -68,6 +69,10 @@ export async function runEmbeddedComparison(options: {
   try {
     const password = options.storefrontPassword || undefined;
     const pages = options.skipPageScan ? [] : await runScan([baselineUrl.toString(), comparisonUrl.toString()], options.viewports, artifactDirectory, (message, completed, total) => options.onProgress?.(message, 10 + Math.round(completed / total * 70)), [password, password]);
+    await Promise.all(pages.map((page) => {
+      const filename = path.basename(page.screenshotPath);
+      return persistArtifact(page.screenshotPath, artifactObjectKey(shopArtifactKey(options.shop), scanId, filename));
+    }));
     const splitAt = options.viewports.length;
     const result: EmbeddedScanResult = {
       scanId,

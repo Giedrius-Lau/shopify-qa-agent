@@ -4,6 +4,7 @@ import path from "node:path";
 import type { LoaderFunctionArgs } from "react-router";
 import prisma from "../db.server";
 import { artifactSignature, shopArtifactKey } from "../scan.server";
+import { artifactObjectKey, readPersistedArtifact } from "../artifact-storage.server";
 
 const SCAN_ID = /^[0-9a-f-]{36}$/i;
 const FILENAME = /^page-\d+-(desktop|mobile)\.png$/;
@@ -18,8 +19,10 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   const expected = artifactSignature(scan.shop, scanId, filename);
   if (supplied.length !== expected.length || !timingSafeEqual(Buffer.from(supplied), Buffer.from(expected))) return new Response("Not found", { status: 404 });
   try {
-    const bytes = await readFile(path.resolve("scan-artifacts", shopArtifactKey(scan.shop), scanId, filename));
-    return new Response(bytes, { headers: { "content-type": "image/png", "cache-control": "private, max-age=3600" } });
+    const shopKey = shopArtifactKey(scan.shop);
+    const persisted = await readPersistedArtifact(artifactObjectKey(shopKey, scanId, filename));
+    const bytes = persisted ?? await readFile(path.resolve("scan-artifacts", shopKey, scanId, filename));
+    return new Response(Buffer.from(bytes), { headers: { "content-type": "image/png", "cache-control": "private, max-age=3600" } });
   } catch {
     return new Response("Not found", { status: 404 });
   }
