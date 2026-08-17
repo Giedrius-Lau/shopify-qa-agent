@@ -119,7 +119,9 @@ async function workQueue(): Promise<void> {
 
 export function kickScanWorker(): void {
   if (global.scanWorkerPromise) return;
-  global.scanWorkerPromise = workQueue().finally(() => { global.scanWorkerPromise = undefined; });
+  global.scanWorkerPromise = workQueue().catch((error) => {
+    console.error("Scan worker could not check the queue:", error);
+  }).finally(() => { global.scanWorkerPromise = undefined; });
 }
 
 export async function scanJobStatus(scanId: string, shop: string): Promise<{ status: string; progress: number; message: string; error: string | null; result?: EmbeddedScanResult }> {
