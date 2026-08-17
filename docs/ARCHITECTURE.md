@@ -7,7 +7,7 @@ The application is a modular monolith in one repository:
 - React Router embedded Shopify app with App Bridge.
 - Shopify OAuth and Prisma-backed session storage.
 - Playwright QA engine invoked server-side by authenticated app actions.
-- Prisma scan persistence, SQLite in local development, and a production database supplied through `DATABASE_URL`.
+- Prisma persistence backed by PostgreSQL in development and production through `DATABASE_URL`.
 - Shop-scoped local artifact storage in development; S3-compatible storage is recommended for production.
 
 The CLI and embedded app use the same deterministic QA engine.

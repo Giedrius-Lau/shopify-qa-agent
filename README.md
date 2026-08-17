@@ -6,6 +6,8 @@ An embedded Shopify app that compares a store's published theme with a theme pre
 
 Requires Node.js 20.19 or newer and a Shopify Partner or developer account.
 
+Create a PostgreSQL database and copy `.env.example` to `.env` with its `DATABASE_URL` before starting locally.
+
 ```bash
 npm install
 npx playwright install chromium

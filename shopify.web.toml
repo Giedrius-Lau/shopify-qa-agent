@@ -4,4 +4,4 @@ webhooks_path = "/webhooks/app/uninstalled"
 
 [commands]
 predev = "npm exec prisma generate"
-dev = "npm run db:init && npm exec react-router dev"
+dev = "npm run db:migrate && npm exec react-router dev"

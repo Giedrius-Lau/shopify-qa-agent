@@ -8,4 +8,4 @@ webhooks_path = "/webhooks/app/uninstalled"
 {%- endif %}
 [commands]
 predev = "{{ exec }} prisma generate"
-dev = "{{ dependency_manager }} run db:init && {{ exec }} react-router dev"
+dev = "{{ dependency_manager }} run db:migrate && {{ exec }} react-router dev"
