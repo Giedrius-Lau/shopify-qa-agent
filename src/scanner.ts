@@ -5,6 +5,7 @@ import { chromium, type Browser, type BrowserContext, type ConsoleMessage, type 
 import type { PageMetadata, PageScanResult, QaIssue, SectionSnapshot, Severity, ShopifyPageType, ViewportName } from "./domain";
 import { normalizeIssues, redactUrl } from "./normalize";
 import { assertSafePublicUrl } from "./security";
+import { checkShopifyStorefront, type ShopifyRuntimeSnapshot } from "./shopify-checks";
 
 const VIEWPORTS = { desktop: { width: 1440, height: 900 }, mobile: { width: 390, height: 844 } } as const;
 const LINK_CHECK_LIMIT = 25;
@@ -112,6 +113,36 @@ export async function scanViewport(browser: Browser, url: string, viewport: View
     }));
     const { bodyClasses, hasProductForm, ...metadata } = pageInfo;
     const pageType = detectShopifyPageType(finalUrl, bodyClasses, hasProductForm);
+    const shopifySnapshot = await page.evaluate<Omit<ShopifyRuntimeSnapshot, "pageType">>(() => {
+      const visible = (element: Element): boolean => {
+        const htmlElement = element as HTMLElement;
+        const style = getComputedStyle(htmlElement);
+        const rect = htmlElement.getBoundingClientRect();
+        return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
+      };
+      const productForms = Array.from(document.querySelectorAll<HTMLFormElement>('form[action*="/cart/add"]'));
+      const insideProductForms = (selector: string) => productForms.flatMap((form) => Array.from(form.querySelectorAll(selector)));
+      const addControls = insideProductForms('button[name="add"], input[name="add"], [type="submit"]');
+      const productRoot = document.querySelector('main-product, product-info, [data-section-type*="product"], [id*="MainProduct"], main') || document.body;
+      const priceSignals = Array.from(productRoot.querySelectorAll('[itemprop="price"], [data-product-price], [data-price], .price, [class*="product__price"], .money')).filter(visible);
+      const productImages = Array.from(productRoot.querySelectorAll('img')).filter(visible);
+      const inventorySignals = Array.from(productRoot.querySelectorAll('[data-sold-out-message], [data-inventory-message], [class*="sold-out"], [class*="sold_out"], [id*="SoldOut"], [class*="inventory"]')).filter(visible);
+      const cartItems = Array.from(document.querySelectorAll('[data-cart-item], .cart-item, [id^="CartItem-"], input[name="updates[]"]')).filter(visible);
+      return {
+        productFormCount: productForms.length,
+        variantInputCount: insideProductForms('input[name="id"], select[name="id"]').length,
+        quantityInputCount: insideProductForms('input[name="quantity"]').length,
+        addToCartControlCount: addControls.length,
+        visiblePriceCount: priceSignals.length,
+        productImageCount: productImages.length,
+        disabledAddToCartCount: addControls.filter((control) => (control as HTMLButtonElement | HTMLInputElement).disabled || control.getAttribute("aria-disabled") === "true").length,
+        inventoryMessageCount: inventorySignals.length,
+        cartItemCount: cartItems.length,
+        cartFormCount: document.querySelectorAll('form[action*="/cart"]').length,
+        checkoutControlCount: document.querySelectorAll('[name="checkout"], a[href*="/checkout"], [formaction*="/checkout"]').length,
+      };
+    });
+    issues.push(...checkShopifyStorefront({ pageType, ...shopifySnapshot }));
     const rawSections = await page.evaluate<RawSection[]>(() => Array.from(document.querySelectorAll<HTMLElement>('[id^="shopify-section-"], .shopify-section')).map((section, index) => {
       const id = section.id || `shopify-section-index-${index}`;
       const heading = section.querySelector<HTMLElement>("h1,h2,h3")?.innerText.trim();
