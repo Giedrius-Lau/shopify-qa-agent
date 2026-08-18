@@ -6,6 +6,7 @@ import { auditChangedThemeAccessibility, compareThemeFiles } from "./theme-code.
 import type { ShopifyPageType, ViewportName } from "../src/domain";
 import { redactUrl } from "../src/normalize";
 import { generateAiReportExplanation } from "./ai-report.server";
+import { repeatableScanConfiguration } from "../src/scan-configuration";
 
 export type ScanJobPayload = {
   pagePaths: string[];
@@ -59,6 +60,7 @@ export async function enqueueScan(shop: string, payload: ScanJobPayload): Promis
     previewUrl: redactUrl(previewUrl.toString()),
     viewports: payload.codeOnly ? "" : payload.viewports.join(","),
     jobPayload: encryptJobPayload(payload),
+    configurationJson: JSON.stringify(repeatableScanConfiguration(payload)),
     progress: 1,
     progressMessage: "Queued",
   } });

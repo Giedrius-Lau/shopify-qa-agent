@@ -42,6 +42,7 @@ model Scan {
   viewports  String
   resultJson String?
   jobPayload String?
+  configurationJson String?
   error      String?
   progress   Int      @default(0)
   progressMessage String?
