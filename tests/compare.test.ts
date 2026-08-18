@@ -28,6 +28,30 @@ test("matches Shopify sections and reports metric and structure changes", () => 
   assert.equal(result.changed[0]?.structureChanged, true);
 });
 
+test("matches section findings when duplicated themes render different dynamic selectors", () => {
+  const live = { ...issue("color-contrast", "a"), selector: "#shopify-section-template--123__featured #ProductCard-839201", section: { id: "shopify-section-template--123__featured", name: "Featured products" } };
+  const preview = { ...issue("color-contrast", "b"), selector: "#shopify-section-template--987__featured #ProductCard-992104", section: { id: "shopify-section-template--987__featured", name: "Featured products" } };
+  assert.deepEqual(compareIssues([live], [preview]), { added: [], resolved: [], unchanged: [preview] });
+});
+
+test("compares repeated section findings as a multiset", () => {
+  const section = { id: "shopify-section-featured", name: "Featured products" };
+  const first = { ...issue("color-contrast", "a"), selector: ".card:nth-child(1)", section };
+  const second = { ...issue("color-contrast", "b"), selector: ".card:nth-child(2)", section };
+  const result = compareIssues([first, second], [{ ...first, fingerprint: "preview" }]);
+  assert.equal(result.added.length, 0);
+  assert.equal(result.unchanged.length, 1);
+  assert.equal(result.resolved.length, 1);
+});
+
+test("does not present one-off browser and Shopify infrastructure noise as theme changes", () => {
+  const live403 = { ...issue("http-error", "403"), message: "HTTP 403 response", evidence: { url: "https://store.test/telemetry", status: 403 } };
+  const failedRequest = { ...issue("request-failed", "failed"), message: "GET request failed", evidence: { url: "https://store.test/telemetry" } };
+  const frameHeader = { ...issue("console-error", "header"), type: "console" as const, message: "Invalid 'X-Frame-Options' header: 'ALLOW-FROM https://store.test/' is not a recognized directive." };
+  const frameTitle = { ...issue("frame-title", "frame"), type: "accessibility" as const, message: "Frames must have an accessible name", evidence: { html: '<iframe src="https://shop.app/pay"></iframe>' } };
+  assert.deepEqual(compareIssues([live403, failedRequest], [frameHeader, frameTitle]), { added: [], resolved: [], unchanged: [] });
+});
+
 test("groups findings under their Shopify section", () => {
   const sectionIssue = { ...issue("nested-interactive", "a"), section: { id: "shopify-section-slideshow", name: "Slideshow" } };
   const groups = groupIssuesBySection([sectionIssue, issue("http-error", "b")]);

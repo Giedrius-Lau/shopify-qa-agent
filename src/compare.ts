@@ -11,18 +11,47 @@ function resourceIdentity(issue: QaIssue): string | null {
   }
 }
 
+function isVolatileRuntimeObservation(issue: QaIssue): boolean {
+  if (issue.rule === "request-failed") return true;
+  if (issue.rule === "http-error" && [401, 403, 429].includes(Number(issue.evidence?.status))) return true;
+  if (issue.rule === "console-error" && /invalid ['"]x-frame-options|allow-from/i.test(issue.message)) return true;
+  if (issue.rule === "frame-title" && /(?:src=|https?:\/\/)[^>"']*shop\.app/i.test(String(issue.evidence?.html ?? ""))) return true;
+  return false;
+}
+
 export function issueComparisonKey(issue: QaIssue): string {
-  const selector = issue.selector?.replace(/template--\d+/g, "template--id").replace(/shopify-section-[a-z0-9_-]*\d[a-z0-9_-]*/gi, "shopify-section-dynamic");
-  return JSON.stringify({ type: issue.type, rule: issue.rule, selector: selector ?? null, message: issue.message, resource: resourceIdentity(issue) });
+  const section = issue.section ? sectionKey(issue.section.id, issue.section.name) : null;
+  const selector = section ? null : issue.selector
+    ?.replace(/template--\d+/g, "template--id")
+    .replace(/shopify-section-[a-z0-9_-]*\d[a-z0-9_-]*/gi, "shopify-section-dynamic")
+    .replace(/([#.][a-z_-]*)(?:\d{6,})([a-z0-9_-]*)/gi, "$1dynamic$2");
+  return JSON.stringify({ type: issue.type, rule: issue.rule, section, selector: selector ?? null, message: issue.message, resource: resourceIdentity(issue) });
 }
 
 export function compareIssues(live: QaIssue[], preview: QaIssue[]) {
-  const liveByKey = new Map(live.map((issue) => [issueComparisonKey(issue), issue]));
-  const previewByKey = new Map(preview.map((issue) => [issueComparisonKey(issue), issue]));
+  const stableLive = live.filter((issue) => !isVolatileRuntimeObservation(issue));
+  const stablePreview = preview.filter((issue) => !isVolatileRuntimeObservation(issue));
+  const remainingLive = new Map<string, QaIssue[]>();
+  for (const issue of stableLive) {
+    const key = issueComparisonKey(issue);
+    remainingLive.set(key, [...(remainingLive.get(key) ?? []), issue]);
+  }
+  const added: QaIssue[] = [];
+  const unchanged: QaIssue[] = [];
+  for (const issue of stablePreview) {
+    const key = issueComparisonKey(issue);
+    const matches = remainingLive.get(key);
+    if (!matches?.length) {
+      added.push(issue);
+      continue;
+    }
+    matches.pop();
+    unchanged.push(issue);
+  }
   return {
-    added: preview.filter((issue) => !liveByKey.has(issueComparisonKey(issue))),
-    resolved: live.filter((issue) => !previewByKey.has(issueComparisonKey(issue))),
-    unchanged: preview.filter((issue) => liveByKey.has(issueComparisonKey(issue))),
+    added,
+    resolved: [...remainingLive.values()].flat(),
+    unchanged,
   };
 }
 

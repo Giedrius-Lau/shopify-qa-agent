@@ -116,8 +116,8 @@ export default function Index() {
   const [scanResult, setScanResult] = useState<EmbeddedScanResult | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
   const [progress, setProgress] = useState<{ percent: number; message: string } | null>(null);
-  const result = scanResult ?? initialResult;
   const loading = progress !== null;
+  const result = loading ? null : scanResult ?? initialResult;
   const pairs = useMemo(() => result ? viewports.map((viewport) => ({ viewport, live: result.live.find((page) => page.viewport === viewport), preview: result.preview.find((page) => page.viewport === viewport) })) : [], [result, viewports]);
   const toggleViewport = (viewport: ViewportName) => setViewports((current) => current.includes(viewport) ? current.filter((item) => item !== viewport) : [...current, viewport]);
   const comparisonThemes = themes.filter((theme) => theme.role === "UNPUBLISHED" && theme.id !== baselineThemeId);
