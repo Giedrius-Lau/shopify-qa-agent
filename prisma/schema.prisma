@@ -111,3 +111,12 @@ model ShopMember {
   @@unique([shop, identity])
   @@index([shop, createdAt])
 }
+
+model ShopPlan {
+  shop          String   @id
+  tier          String   @default("free")
+  planHandle    String?
+  lastCheckedAt DateTime @default(now())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}

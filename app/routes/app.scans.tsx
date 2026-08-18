@@ -11,6 +11,7 @@ import { enqueueScan, kickScanWorker } from "../scan-jobs.server";
 import { getStoreThemes } from "../themes.server";
 import { parseRepeatableScanConfiguration } from "../../src/scan-configuration";
 import { requireScanPermission } from "../team.server";
+import { requireScanCapacity } from "../usage.server";
 
 type ActionData = { error: string } | undefined;
 
@@ -23,6 +24,7 @@ export const action = async ({ request }: ActionFunctionArgs): Promise<ActionDat
   const source = await prisma.scan.findFirst({ where: { id: sourceId, shop: session.shop }, select: { configurationJson: true } });
   if (!source?.configurationJson) return { error: "This older scan does not contain a reusable configuration." };
   try {
+    await requireScanCapacity(session.shop);
     const configuration = parseRepeatableScanConfiguration(source.configurationJson);
     const themes = await getStoreThemes(admin);
     const baseline = themes.find((theme) => theme.id === configuration.baselineThemeId);

@@ -8,6 +8,7 @@ import { parseRepeatableScanConfiguration } from "../../src/scan-configuration";
 import { isScanFrequency, nextScheduledRun } from "../../src/schedule";
 import "../globals.css";
 import { requireScanPermission } from "../team.server";
+import { requireScheduleCapacity } from "../usage.server";
 
 type ActionData = { error?: string; success?: string };
 
@@ -43,6 +44,7 @@ export const action = async ({ request }: ActionFunctionArgs): Promise<ActionDat
   const hourUtc = Number(form.get("hourUtc"));
   if (typeof scanId !== "string" || typeof name !== "string" || !name.trim() || name.trim().length > 80 || !isScanFrequency(frequency)) return { error: "Complete all schedule fields." };
   try {
+    await requireScheduleCapacity(session.shop);
     const scan = await prisma.scan.findFirst({ where: { id: scanId, shop: session.shop }, select: { configurationJson: true } });
     if (!scan?.configurationJson) return { error: "Select a reusable scan." };
     const configuration = parseRepeatableScanConfiguration(scan.configurationJson);

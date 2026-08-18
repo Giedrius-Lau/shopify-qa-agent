@@ -14,6 +14,7 @@ import type { PageScanResult, QaIssue, ViewportName } from "../../src/domain";
 import { buildReportSummary } from "../../src/report-summary";
 import "../globals.css";
 import { requireScanPermission } from "../team.server";
+import { requireScanCapacity } from "../usage.server";
 
 type ActionData = { ok: true; result: EmbeddedScanResult } | { ok: false; error: string };
 
@@ -34,6 +35,7 @@ export const action = async ({ request }: ActionFunctionArgs): Promise<ActionDat
   const { admin, session } = await authenticate.admin(request);
   await requireScanPermission(session);
   try {
+    await requireScanCapacity(session.shop);
     const body = await request.json() as { pagePaths?: unknown; pagePath?: unknown; baselineThemeId?: unknown; comparisonThemeId?: unknown; storePassword?: unknown; viewports?: unknown };
     const pagePaths = normalizePagePaths(body.pagePaths, body.pagePath);
     const themes = await getStoreThemes(admin);

@@ -4,6 +4,7 @@ import { enqueueScan, kickScanWorker } from "./scan-jobs.server";
 import { getStoreThemes } from "./themes.server";
 import { parseRepeatableScanConfiguration } from "../src/scan-configuration";
 import { isScanFrequency, nextScheduledRun } from "../src/schedule";
+import { requireScanCapacity } from "./usage.server";
 
 declare global {
   // eslint-disable-next-line no-var
@@ -21,6 +22,7 @@ async function processDueSchedules(): Promise<void> {
     });
     if (!claimed.count) continue;
     try {
+      await requireScanCapacity(schedule.shop);
       const configuration = parseRepeatableScanConfiguration(schedule.configurationJson);
       const { admin } = await unauthenticated.admin(schedule.shop);
       const themes = await getStoreThemes(admin);
