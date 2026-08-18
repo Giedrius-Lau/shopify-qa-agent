@@ -13,6 +13,7 @@ import { compareIssues, compareMetadata, compareSections, groupIssuesBySection, 
 import type { PageScanResult, QaIssue, ViewportName } from "../../src/domain";
 import { buildReportSummary } from "../../src/report-summary";
 import "../globals.css";
+import { requireScanPermission } from "../team.server";
 
 type ActionData = { ok: true; result: EmbeddedScanResult } | { ok: false; error: string };
 
@@ -31,6 +32,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
 export const action = async ({ request }: ActionFunctionArgs): Promise<ActionData> => {
   const { admin, session } = await authenticate.admin(request);
+  await requireScanPermission(session);
   try {
     const body = await request.json() as { pagePaths?: unknown; pagePath?: unknown; baselineThemeId?: unknown; comparisonThemeId?: unknown; storePassword?: unknown; viewports?: unknown };
     const pagePaths = normalizePagePaths(body.pagePaths, body.pagePath);

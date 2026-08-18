@@ -96,3 +96,18 @@ model Notification {
   @@unique([scheduleId, scanId, kind])
   @@index([shop, createdAt])
 }
+
+model ShopMember {
+  id          String   @id
+  shop        String
+  identity    String
+  displayName String
+  email       String?
+  role        String
+  lastSeenAt  DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([shop, identity])
+  @@index([shop, createdAt])
+}

@@ -4,6 +4,7 @@ import { enqueueScan, kickScanWorker, scanJobStatus } from "../scan-jobs.server"
 import { getStoreThemes } from "../themes.server";
 import type { ViewportName } from "../../src/domain";
 import { normalizePagePaths } from "../../src/page-paths";
+import { requireScanPermission } from "../team.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
@@ -15,6 +16,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
 export const action = async ({ request }: ActionFunctionArgs) => {
   const { admin, session } = await authenticate.admin(request);
+  await requireScanPermission(session);
   try {
     const body = await request.json() as { pagePaths?: unknown; pagePath?: unknown; baselineThemeId?: unknown; comparisonThemeId?: unknown; storePassword?: unknown; viewports?: unknown; codeOnly?: unknown; explainWithAi?: unknown };
     const pagePaths = normalizePagePaths(body.pagePaths, body.pagePath);

@@ -5,11 +5,13 @@ import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { isValidNotificationEmail } from "../../src/email";
 import "../globals.css";
+import { requireScanPermission } from "../team.server";
 
 type ActionData = { error?: string; success?: string };
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
+  await requireScanPermission(session);
   const [notifications, settings] = await Promise.all([
     prisma.notification.findMany({ where: { shop: session.shop }, orderBy: { createdAt: "desc" }, take: 100 }),
     prisma.shopNotificationSettings.findUnique({ where: { shop: session.shop } }),
@@ -19,6 +21,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
 export const action = async ({ request }: ActionFunctionArgs): Promise<ActionData> => {
   const { session } = await authenticate.admin(request);
+  await requireScanPermission(session);
   const form = await request.formData();
   const intent = form.get("intent");
   if (intent === "read-all") {

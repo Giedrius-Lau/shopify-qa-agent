@@ -7,11 +7,13 @@ import prisma from "../db.server";
 import { parseRepeatableScanConfiguration } from "../../src/scan-configuration";
 import { isScanFrequency, nextScheduledRun } from "../../src/schedule";
 import "../globals.css";
+import { requireScanPermission } from "../team.server";
 
 type ActionData = { error?: string; success?: string };
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
+  await requireScanPermission(session);
   const [schedules, scans] = await Promise.all([
     prisma.scanSchedule.findMany({ where: { shop: session.shop }, orderBy: { createdAt: "desc" } }),
     prisma.scan.findMany({ where: { shop: session.shop, configurationJson: { not: null } }, orderBy: { createdAt: "desc" }, take: 20, select: { id: true, liveUrl: true, createdAt: true } }),
@@ -21,6 +23,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
 export const action = async ({ request }: ActionFunctionArgs): Promise<ActionData> => {
   const { session } = await authenticate.admin(request);
+  await requireScanPermission(session);
   const form = await request.formData();
   const intent = form.get("intent");
   const id = form.get("id");

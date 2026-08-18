@@ -10,11 +10,13 @@ import "../globals.css";
 import { enqueueScan, kickScanWorker } from "../scan-jobs.server";
 import { getStoreThemes } from "../themes.server";
 import { parseRepeatableScanConfiguration } from "../../src/scan-configuration";
+import { requireScanPermission } from "../team.server";
 
 type ActionData = { error: string } | undefined;
 
 export const action = async ({ request }: ActionFunctionArgs): Promise<ActionData | Response> => {
   const { admin, session } = await authenticate.admin(request);
+  await requireScanPermission(session);
   const form = await request.formData();
   const sourceId = form.get("scanId");
   if (typeof sourceId !== "string") return { error: "Select a scan to run again." };

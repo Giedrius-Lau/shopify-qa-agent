@@ -5,9 +5,11 @@ import { AppProvider } from "@shopify/shopify-app-react-router/react";
 import { NavMenu } from "@shopify/app-bridge-react";
 
 import { authenticate } from "../shopify.server";
+import { registerShopMember } from "../team.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  await authenticate.admin(request);
+  const { session } = await authenticate.admin(request);
+  await registerShopMember(session);
 
   // eslint-disable-next-line no-undef
   return { apiKey: process.env.SHOPIFY_API_KEY || "" };
@@ -23,6 +25,7 @@ export default function App() {
         <a href="/app/scans">Scan history</a>
         <a href="/app/schedules">Schedules</a>
         <a href="/app/notifications">Notifications</a>
+        <a href="/app/team">Team</a>
       </NavMenu>
       <Outlet />
     </AppProvider>
