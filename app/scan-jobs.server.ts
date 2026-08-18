@@ -7,7 +7,7 @@ import type { ShopifyPageType, ViewportName } from "../src/domain";
 import { redactUrl } from "../src/normalize";
 
 export type ScanJobPayload = {
-  pagePath: string;
+  pagePaths: string[];
   baselineThemeId: string;
   baselineThemeRole: string;
   comparisonThemeId: string;
@@ -45,7 +45,7 @@ function pageTypeFromPath(pagePath: string): ShopifyPageType {
 
 export async function enqueueScan(shop: string, payload: ScanJobPayload): Promise<string> {
   const scanId = randomUUID();
-  const liveUrl = new URL(payload.pagePath, `https://${shop}`);
+  const liveUrl = new URL(payload.pagePaths[0], `https://${shop}`);
   const previewUrl = new URL(liveUrl);
   const comparisonId = payload.comparisonThemeId.match(/\/(\d+)$/)?.[1];
   if (comparisonId) previewUrl.searchParams.set("preview_theme_id", comparisonId);
@@ -70,10 +70,11 @@ async function updateProgress(scanId: string, message: string, progress: number)
 async function executeJob(scan: { id: string; shop: string; jobPayload: string | null }): Promise<void> {
   if (!scan.jobPayload) throw new Error("Scan job payload is missing.");
   const payload = decryptJobPayload(scan.jobPayload);
+  const pagePaths = payload.pagePaths?.length ? payload.pagePaths : ["/"];
   const { admin } = await unauthenticated.admin(scan.shop);
   const result = await runEmbeddedComparison({
     shop: scan.shop,
-    pagePath: payload.pagePath,
+    pagePaths,
     baselineThemeId: payload.baselineThemeId,
     baselineThemeRole: payload.baselineThemeRole,
     comparisonThemeId: payload.comparisonThemeId,
@@ -87,7 +88,7 @@ async function executeJob(scan: { id: string; shop: string; jobPayload: string |
   });
   await updateProgress(scan.id, "Comparing Shopify theme files", 84);
   const representativePage = result.preview[0];
-  result.codeChanges = await compareThemeFiles(admin, payload.baselineThemeId, payload.comparisonThemeId, representativePage?.pageType ?? pageTypeFromPath(payload.pagePath), representativePage?.sections ?? []);
+  result.codeChanges = await compareThemeFiles(admin, payload.baselineThemeId, payload.comparisonThemeId, representativePage?.pageType ?? pageTypeFromPath(pagePaths[0]), representativePage?.sections ?? []);
   if (payload.codeOnly) {
     await updateProgress(scan.id, "Checking changed code for accessibility", 93);
     result.codeAccessibilityIssues = await auditChangedThemeAccessibility(admin, payload.comparisonThemeId, result.codeChanges.filter((change) => change.status !== "removed").map((change) => change.filename));

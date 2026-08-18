@@ -3,6 +3,7 @@ import { authenticate } from "../shopify.server";
 import { enqueueScan, kickScanWorker, scanJobStatus } from "../scan-jobs.server";
 import { getStoreThemes } from "../themes.server";
 import type { ViewportName } from "../../src/domain";
+import { normalizePagePaths } from "../../src/page-paths";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
@@ -15,8 +16,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 export const action = async ({ request }: ActionFunctionArgs) => {
   const { admin, session } = await authenticate.admin(request);
   try {
-    const body = await request.json() as { pagePath?: unknown; baselineThemeId?: unknown; comparisonThemeId?: unknown; storePassword?: unknown; viewports?: unknown; codeOnly?: unknown };
-    if (typeof body.pagePath !== "string" || !body.pagePath.startsWith("/") || body.pagePath.startsWith("//")) throw new Error("Enter a valid storefront page path.");
+    const body = await request.json() as { pagePaths?: unknown; pagePath?: unknown; baselineThemeId?: unknown; comparisonThemeId?: unknown; storePassword?: unknown; viewports?: unknown; codeOnly?: unknown };
+    const pagePaths = normalizePagePaths(body.pagePaths, body.pagePath);
     const themes = await getStoreThemes(admin);
     const baselineTheme = themes.find((theme) => theme.id === body.baselineThemeId);
     const comparisonTheme = themes.find((theme) => theme.id === body.comparisonThemeId && theme.role === "UNPUBLISHED");
@@ -29,7 +30,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     if (!codeOnly && viewports.length === 0) throw new Error("Select at least one viewport.");
     if (body.storePassword !== undefined && (typeof body.storePassword !== "string" || body.storePassword.length > 256)) throw new Error("Storefront password is invalid.");
     const scanId = await enqueueScan(session.shop, {
-      pagePath: body.pagePath,
+      pagePaths,
       baselineThemeId: baselineTheme.id,
       baselineThemeRole: baselineTheme.role,
       comparisonThemeId: comparisonTheme.id,

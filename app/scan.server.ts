@@ -41,7 +41,7 @@ export function refreshArtifactUrls(result: EmbeddedScanResult, shop: string): E
 
 export async function runEmbeddedComparison(options: {
   shop: string;
-  pagePath: string;
+  pagePaths: string[];
   baselineThemeId: string;
   baselineThemeRole: string;
   comparisonThemeId: string;
@@ -54,33 +54,32 @@ export async function runEmbeddedComparison(options: {
   onProgress?: (message: string, percent: number) => void;
 }): Promise<EmbeddedScanResult> {
   const liveBase = new URL(`https://${options.shop}`);
-  const pageUrl = new URL(options.pagePath, liveBase);
-  if (pageUrl.origin !== liveBase.origin) throw new Error("The page path must belong to the installed shop.");
+  const pageUrls = options.pagePaths.map((pagePath) => new URL(pagePath, liveBase));
+  if (pageUrls.length === 0 || pageUrls.some((pageUrl) => pageUrl.origin !== liveBase.origin)) throw new Error("The page paths must belong to the installed shop.");
   const numericThemeId = (id: string) => id.match(/^gid:\/\/shopify\/(?:OnlineStoreTheme|Theme)\/(\d+)$/)?.[1];
   const baselineId = numericThemeId(options.baselineThemeId);
   const comparisonId = numericThemeId(options.comparisonThemeId);
   if (!baselineId || !comparisonId) throw new Error("Shopify returned an invalid theme identifier.");
-  const baselineUrl = new URL(pageUrl);
-  if (options.baselineThemeRole !== "MAIN") baselineUrl.searchParams.set("preview_theme_id", baselineId);
-  const comparisonUrl = new URL(pageUrl);
-  comparisonUrl.searchParams.set("preview_theme_id", comparisonId);
+  const baselineUrls = pageUrls.map((pageUrl) => { const url = new URL(pageUrl); if (options.baselineThemeRole !== "MAIN") url.searchParams.set("preview_theme_id", baselineId); return url; });
+  const comparisonUrls = pageUrls.map((pageUrl) => { const url = new URL(pageUrl); url.searchParams.set("preview_theme_id", comparisonId); return url; });
 
   const scanId = options.scanId ?? randomUUID();
   const artifactDirectory = path.resolve("scan-artifacts", shopArtifactKey(options.shop), scanId);
   if (options.existingRecord) {
     await prisma.scan.update({ where: { id: scanId }, data: { status: "running", error: null } });
   } else {
-    await prisma.scan.create({ data: { id: scanId, shop: options.shop, status: "running", liveUrl: redactUrl(baselineUrl.toString()), previewUrl: redactUrl(comparisonUrl.toString()), viewports: options.viewports.join(",") } });
+    await prisma.scan.create({ data: { id: scanId, shop: options.shop, status: "running", liveUrl: redactUrl(baselineUrls[0].toString()), previewUrl: redactUrl(comparisonUrls[0].toString()), viewports: options.viewports.join(",") } });
   }
 
   try {
     const password = options.storefrontPassword || undefined;
-    const pages = options.skipPageScan ? [] : await runScan([baselineUrl.toString(), comparisonUrl.toString()], options.viewports, artifactDirectory, (message, completed, total) => options.onProgress?.(message, 10 + Math.round(completed / total * 70)), [password, password]);
+    const urls = [...baselineUrls, ...comparisonUrls].map((url) => url.toString());
+    const pages = options.skipPageScan ? [] : await runScan(urls, options.viewports, artifactDirectory, (message, completed, total) => options.onProgress?.(message, 10 + Math.round(completed / total * 70)), urls.map(() => password));
     await Promise.all(pages.map((page) => {
       const filename = path.basename(page.screenshotPath);
       return persistArtifact(page.screenshotPath, artifactObjectKey(shopArtifactKey(options.shop), scanId, filename));
     }));
-    const splitAt = options.viewports.length;
+    const splitAt = options.pagePaths.length * options.viewports.length;
     const result: EmbeddedScanResult = {
       scanId,
       live: pages.slice(0, splitAt).map((page) => artifactUrl(page, scanId, options.shop)),

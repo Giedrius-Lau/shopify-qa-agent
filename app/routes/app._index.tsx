@@ -7,6 +7,8 @@ import prisma from "../db.server";
 import { refreshArtifactUrls, runEmbeddedComparison, type EmbeddedScanResult } from "../scan.server";
 import { compareThemeFiles } from "../theme-code.server";
 import { getStoreThemes } from "../themes.server";
+import { discoverStorePages } from "../store-pages.server";
+import { normalizePagePaths } from "../../src/page-paths";
 import { compareIssues, compareMetadata, compareSections, groupIssuesBySection, sectionKey } from "../../src/compare";
 import type { PageScanResult, QaIssue, ViewportName } from "../../src/domain";
 import "../globals.css";
@@ -16,20 +18,21 @@ type ActionData = { ok: true; result: EmbeddedScanResult } | { ok: false; error:
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { admin, session } = await authenticate.admin(request);
   const themes = await getStoreThemes(admin);
+  const storePages = await discoverStorePages(admin);
   const recentScans = await prisma.scan.findMany({ where: { shop: session.shop }, orderBy: { createdAt: "desc" }, take: 5, select: { id: true, status: true, createdAt: true, resultJson: true } });
   const selectedId = new URL(request.url).searchParams.get("scan");
   const selectedScan = selectedId ? await prisma.scan.findFirst({ where: { id: selectedId, shop: session.shop, status: "completed" }, select: { resultJson: true } }) : null;
   const saved = selectedScan?.resultJson ?? recentScans.find((scan) => scan.status === "completed" && scan.resultJson)?.resultJson;
   let initialResult: EmbeddedScanResult | null = null;
   try { initialResult = saved ? refreshArtifactUrls(JSON.parse(saved) as EmbeddedScanResult, session.shop) : null; } catch { initialResult = null; }
-  return { liveBase: `https://${session.shop}`, themes, defaultThemeId: themes.find((theme) => theme.role === "MAIN")?.id ?? themes[0]?.id ?? "", recentScans: recentScans.map((scan) => ({ id: scan.id, status: scan.status, createdAt: scan.createdAt })), initialResult };
+  return { liveBase: `https://${session.shop}`, themes, storePages, defaultThemeId: themes.find((theme) => theme.role === "MAIN")?.id ?? themes[0]?.id ?? "", recentScans: recentScans.map((scan) => ({ id: scan.id, status: scan.status, createdAt: scan.createdAt })), initialResult };
 };
 
 export const action = async ({ request }: ActionFunctionArgs): Promise<ActionData> => {
   const { admin, session } = await authenticate.admin(request);
   try {
-    const body = await request.json() as { pagePath?: unknown; baselineThemeId?: unknown; comparisonThemeId?: unknown; storePassword?: unknown; viewports?: unknown };
-    if (typeof body.pagePath !== "string" || !body.pagePath.startsWith("/") || body.pagePath.startsWith("//")) return { ok: false, error: "Enter a valid storefront page path." };
+    const body = await request.json() as { pagePaths?: unknown; pagePath?: unknown; baselineThemeId?: unknown; comparisonThemeId?: unknown; storePassword?: unknown; viewports?: unknown };
+    const pagePaths = normalizePagePaths(body.pagePaths, body.pagePath);
     const themes = await getStoreThemes(admin);
     const baselineTheme = themes.find((theme) => theme.id === body.baselineThemeId);
     const comparisonTheme = themes.find((theme) => theme.id === body.comparisonThemeId && theme.role === "UNPUBLISHED");
@@ -40,7 +43,7 @@ export const action = async ({ request }: ActionFunctionArgs): Promise<ActionDat
     const viewports = requested.filter((value): value is ViewportName => value === "desktop" || value === "mobile");
     if (viewports.length === 0) return { ok: false, error: "Select at least one viewport." };
     if (body.storePassword !== undefined && (typeof body.storePassword !== "string" || body.storePassword.length > 256)) return { ok: false, error: "Storefront password is invalid." };
-    const result = await runEmbeddedComparison({ shop: session.shop, pagePath: body.pagePath, baselineThemeId: baselineTheme.id, baselineThemeRole: baselineTheme.role, comparisonThemeId: comparisonTheme.id, viewports, storefrontPassword: typeof body.storePassword === "string" ? body.storePassword : undefined });
+    const result = await runEmbeddedComparison({ shop: session.shop, pagePaths, baselineThemeId: baselineTheme.id, baselineThemeRole: baselineTheme.role, comparisonThemeId: comparisonTheme.id, viewports, storefrontPassword: typeof body.storePassword === "string" ? body.storePassword : undefined });
     const representativePage = result.preview[0];
     if (representativePage) {
       result.codeChanges = await compareThemeFiles(admin, baselineTheme.id, comparisonTheme.id, representativePage.pageType, representativePage.sections);
@@ -105,9 +108,19 @@ function ScanProgress({ percent, message, codeOnly }: { percent: number; message
   return <section className="loading scan-progress" aria-live="polite"><div className="progress-copy"><div><strong>{codeOnly ? "Comparing theme code" : "Chromium is scanning both themes"}</strong><span>{percent}%</span></div><p>{message}</p><div className="progress-track" role="progressbar" aria-label="Theme scan progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}><span style={{ width: `${percent}%` }}/></div></div></section>;
 }
 
+function pagePathOf(page: PageScanResult): string {
+  try { return new URL(page.requestedUrl).pathname; } catch { return page.requestedUrl; }
+}
+
+function pageLabel(pathname: string): string {
+  if (pathname === "/") return "Home page";
+  return pathname.split("/").filter(Boolean).map((part) => decodeURIComponent(part).replace(/-/g, " ")).join(" · ");
+}
+
 export default function Index() {
-  const { liveBase, themes, defaultThemeId, recentScans, initialResult } = useLoaderData<typeof loader>();
-  const [pagePath, setPagePath] = useState("/");
+  const { liveBase, themes, storePages, defaultThemeId, recentScans, initialResult } = useLoaderData<typeof loader>();
+  const [pagePaths, setPagePaths] = useState<string[]>(["/"]);
+  const [customPagePath, setCustomPagePath] = useState("");
   const [baselineThemeId, setBaselineThemeId] = useState(defaultThemeId);
   const [comparisonThemeId, setComparisonThemeId] = useState("");
   const [storePassword, setStorePassword] = useState("");
@@ -118,17 +131,30 @@ export default function Index() {
   const [progress, setProgress] = useState<{ percent: number; message: string } | null>(null);
   const loading = progress !== null;
   const result = loading ? null : scanResult ?? initialResult;
-  const pairs = useMemo(() => result ? viewports.map((viewport) => ({ viewport, live: result.live.find((page) => page.viewport === viewport), preview: result.preview.find((page) => page.viewport === viewport) })) : [], [result, viewports]);
+  const pageGroups = useMemo(() => {
+    if (!result) return [];
+    const paths = [...new Set(result.live.map(pagePathOf))];
+    return paths.map((pathname) => ({ pathname, pairs: result.live.filter((page) => pagePathOf(page) === pathname).map((live) => ({ viewport: live.viewport, live, preview: result.preview.find((page) => pagePathOf(page) === pathname && page.viewport === live.viewport) })) }));
+  }, [result]);
   const toggleViewport = (viewport: ViewportName) => setViewports((current) => current.includes(viewport) ? current.filter((item) => item !== viewport) : [...current, viewport]);
   const comparisonThemes = themes.filter((theme) => theme.role === "UNPUBLISHED" && theme.id !== baselineThemeId);
   const selectBaseline = (themeId: string) => {
     setBaselineThemeId(themeId);
     if (themeId === comparisonThemeId) setComparisonThemeId("");
   };
+  const togglePage = (pagePath: string) => setPagePaths((current) => current.includes(pagePath) ? current.filter((item) => item !== pagePath) : current.length < 10 ? [...current, pagePath] : current);
+  const addCustomPage = () => {
+    try {
+      const [normalized] = normalizePagePaths([customPagePath]);
+      if (!pagePaths.includes(normalized) && pagePaths.length < 10) setPagePaths((current) => [...current, normalized]);
+      setCustomPagePath("");
+      setScanError(null);
+    } catch (error) { setScanError(error instanceof Error ? error.message : "Invalid page path."); }
+  };
   const submit = async () => {
     setScanError(null); setProgress({ percent: 1, message: "Starting comparison" }); setScanResult(null);
     try {
-      const response = await fetch(`/app/scan-stream${window.location.search}`, { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ pagePath, baselineThemeId, comparisonThemeId, storePassword, viewports, codeOnly }) });
+      const response = await fetch(`/app/scan-stream${window.location.search}`, { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ pagePaths, baselineThemeId, comparisonThemeId, storePassword, viewports, codeOnly }) });
       const queued = await response.json() as { scanId?: string; error?: string };
       if (!response.ok || !queued.scanId) throw new Error(queued.error || `Scan request failed (${response.status}).`);
       for (;;) {
@@ -144,9 +170,11 @@ export default function Index() {
   };
 
   return <s-page heading="Shopify QA Agent"><div className="qa-main"><header className="hero"><span className="brand">THEME QA</span><h1>Compare one theme against another.</h1><p>Select a baseline theme and an unpublished theme from the installed store. No preview link is required.</p></header>
-    <section className="scan-form"><div className="field-grid"><label><span>Installed storefront</span><input value={liveBase} readOnly/></label><label><span>Page path</span><input value={pagePath} onChange={(event) => setPagePath(event.target.value)} placeholder="/products/example"/></label><label><span>Baseline theme</span><select value={baselineThemeId} onChange={(event) => selectBaseline(event.target.value)}>{themes.map((theme) => <option key={theme.id} value={theme.id} disabled={theme.processing}>{theme.name}{theme.role === "MAIN" ? " — Live" : ` — ${theme.role.toLowerCase()}`}{theme.processing ? " (processing)" : ""}</option>)}</select></label><label><span>Unpublished comparison theme</span><select required value={comparisonThemeId} onChange={(event) => setComparisonThemeId(event.target.value)}><option value="">Select an unpublished theme…</option>{comparisonThemes.map((theme) => <option key={theme.id} value={theme.id} disabled={theme.processing}>{theme.name}{theme.processing ? " (processing)" : ""}</option>)}</select></label>{!codeOnly && <label><span>Storefront password <em>optional</em></span><input type="password" autoComplete="off" value={storePassword} onChange={(event) => setStorePassword(event.target.value)} placeholder="Used only if Shopify asks"/></label>}</div><div className="scan-mode"><input id="code-only" type="checkbox" checked={codeOnly} onChange={(event) => setCodeOnly(event.target.checked)}/><label htmlFor="code-only"><strong>Code-only scan</strong><small>Skip Chromium, screenshots, accessibility, links, and visual checks.</small></label></div><div className="form-footer">{!codeOnly && <fieldset><legend>Viewports</legend><label className="check"><input type="checkbox" checked={viewports.includes("desktop")} onChange={() => toggleViewport("desktop")}/> Desktop</label><label className="check"><input type="checkbox" checked={viewports.includes("mobile")} onChange={() => toggleViewport("mobile")}/> Mobile</label></fieldset>}<button disabled={loading || !baselineThemeId || !comparisonThemeId || (!codeOnly && viewports.length === 0)} onClick={submit}>{loading ? "Scanning…" : codeOnly ? "Compare code" : "Run comparison"}</button></div><p className="privacy">Theme IDs and storefront passwords are never exposed in reports.</p></section>
+    <section className="scan-form"><div className="field-grid"><label><span>Installed storefront</span><input value={liveBase} readOnly/></label><label><span>Baseline theme</span><select value={baselineThemeId} onChange={(event) => selectBaseline(event.target.value)}>{themes.map((theme) => <option key={theme.id} value={theme.id} disabled={theme.processing}>{theme.name}{theme.role === "MAIN" ? " — Live" : ` — ${theme.role.toLowerCase()}`}{theme.processing ? " (processing)" : ""}</option>)}</select></label><label><span>Unpublished comparison theme</span><select required value={comparisonThemeId} onChange={(event) => setComparisonThemeId(event.target.value)}><option value="">Select an unpublished theme…</option>{comparisonThemes.map((theme) => <option key={theme.id} value={theme.id} disabled={theme.processing}>{theme.name}{theme.processing ? " (processing)" : ""}</option>)}</select></label>{!codeOnly && <label><span>Storefront password <em>optional</em></span><input type="password" autoComplete="off" value={storePassword} onChange={(event) => setStorePassword(event.target.value)} placeholder="Used only if Shopify asks"/></label>}</div>
+      {!codeOnly && <div className="page-picker"><div className="page-picker-heading"><div><strong>Pages to scan</strong><span>Select up to 10 pages. Each page is checked on every selected viewport.</span></div><b>{pagePaths.length}/10 selected</b></div><div className="page-options">{storePages.map((page, index) => <label aria-label={`Scan ${page.label}`} htmlFor={`scan-page-${index}`} className={pagePaths.includes(page.path) ? "selected" : ""} key={page.path}><input id={`scan-page-${index}`} type="checkbox" checked={pagePaths.includes(page.path)} onChange={() => togglePage(page.path)}/><span><strong>{page.label}</strong><small>{page.path}</small></span></label>)}</div><div className="custom-page"><input aria-label="Additional storefront page path" value={customPagePath} onChange={(event) => setCustomPagePath(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addCustomPage(); } }} placeholder="Add another path, e.g. /blogs/news"/><button type="button" onClick={addCustomPage} disabled={!customPagePath.trim() || pagePaths.length >= 10}>Add page</button></div>{pagePaths.filter((path) => !storePages.some((page) => page.path === path)).length > 0 && <div className="custom-page-list">{pagePaths.filter((path) => !storePages.some((page) => page.path === path)).map((path) => <button type="button" key={path} onClick={() => togglePage(path)}>{path} ×</button>)}</div>}</div>}
+      <div className="scan-mode"><input id="code-only" type="checkbox" checked={codeOnly} onChange={(event) => setCodeOnly(event.target.checked)}/><label htmlFor="code-only"><strong>Code-only scan</strong><small>Skip Chromium, screenshots, accessibility, links, and visual checks.</small></label></div><div className="form-footer">{!codeOnly && <fieldset><legend>Viewports</legend><label className="check"><input type="checkbox" checked={viewports.includes("desktop")} onChange={() => toggleViewport("desktop")}/> Desktop</label><label className="check"><input type="checkbox" checked={viewports.includes("mobile")} onChange={() => toggleViewport("mobile")}/> Mobile</label></fieldset>}<button disabled={loading || !baselineThemeId || !comparisonThemeId || (!codeOnly && (viewports.length === 0 || pagePaths.length === 0))} onClick={submit}>{loading ? "Scanning…" : codeOnly ? "Compare code" : `Scan ${pagePaths.length} page${pagePaths.length === 1 ? "" : "s"}`}</button></div><p className="privacy">Theme IDs and storefront passwords are never exposed in reports.</p></section>
     {scanError && <div className="error" role="alert">{scanError}</div>}{progress && <ScanProgress percent={progress.percent} message={progress.message} codeOnly={codeOnly}/>}
-    {result && <section className="results"><div className="section-heading"><div><span className="eyebrow">Scan complete</span><h2>Theme comparison</h2></div></div>{result.codeAccessibilityIssues && <CodeAccessibility issues={result.codeAccessibilityIssues}/>} {result.codeChanges && <CodeChanges changes={result.codeChanges}/>} {pairs.map(({ viewport, live, preview }) => live && preview && <section key={viewport} className="viewport-group"><h2>{viewport === "desktop" ? "Desktop view" : "Mobile view"}</h2><VisualComparison live={live} preview={preview}/><ThemeDelta live={live} preview={preview}/></section>)}</section>}
+    {result && <section className="results"><div className="section-heading"><div><span className="eyebrow">Scan complete</span><h2>Theme comparison</h2></div></div>{result.codeAccessibilityIssues && <CodeAccessibility issues={result.codeAccessibilityIssues}/>} {result.codeChanges && <CodeChanges changes={result.codeChanges}/>} {pageGroups.map((group) => <section className="page-result" key={group.pathname}><div className="page-result-heading"><div><span className="eyebrow">Storefront page</span><h2>{pageLabel(group.pathname)}</h2></div><code>{group.pathname}</code></div>{group.pairs.map(({ viewport, live, preview }) => preview && <section key={`${group.pathname}:${viewport}`} className="viewport-group"><h2>{viewport === "desktop" ? "Desktop view" : "Mobile view"}</h2><VisualComparison live={live} preview={preview}/><ThemeDelta live={live} preview={preview}/></section>)}</section>)}</section>}
     {recentScans.length > 0 && <details className="recent-scans"><summary>Previous scan activity</summary>{recentScans.map((scan) => <p key={scan.id}>{scan.status === "completed" ? "Completed" : scan.status === "failed" ? "Failed" : "In progress"} · {new Date(scan.createdAt).toLocaleString()}</p>)}</details>}
   </div></s-page>;
 }
