@@ -72,3 +72,27 @@ model ScanSchedule {
   @@index([shop, createdAt])
   @@index([enabled, nextRunAt])
 }
+
+model ShopNotificationSettings {
+  shop         String   @id
+  email        String?
+  emailEnabled Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Notification {
+  id         String   @id
+  shop       String
+  scanId     String
+  scheduleId String
+  kind       String
+  title      String
+  message    String
+  readAt     DateTime?
+  emailedAt  DateTime?
+  createdAt  DateTime @default(now())
+
+  @@unique([scheduleId, scanId, kind])
+  @@index([shop, createdAt])
+}

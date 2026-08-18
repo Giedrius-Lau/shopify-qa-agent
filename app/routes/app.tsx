@@ -22,6 +22,7 @@ export default function App() {
         <a href="/app" rel="home">New comparison</a>
         <a href="/app/scans">Scan history</a>
         <a href="/app/schedules">Schedules</a>
+        <a href="/app/notifications">Notifications</a>
       </NavMenu>
       <Outlet />
     </AppProvider>

@@ -7,6 +7,7 @@ import type { ShopifyPageType, ViewportName } from "../src/domain";
 import { redactUrl } from "../src/normalize";
 import { generateAiReportExplanation } from "./ai-report.server";
 import { repeatableScanConfiguration } from "../src/scan-configuration";
+import { notifyScheduledScan } from "./notifications.server";
 
 export type ScanJobPayload = {
   pagePaths: string[];
@@ -102,6 +103,9 @@ async function executeJob(scan: { id: string; shop: string; jobPayload: string |
     result.aiExplanation = await generateAiReportExplanation(result);
   }
   await prisma.scan.update({ where: { id: scan.id }, data: { status: "completed", progress: 100, progressMessage: "Report ready", resultJson: JSON.stringify(result), jobPayload: null, error: null } });
+  await notifyScheduledScan(scan.id, "completed", result).catch((error) => {
+    console.error("Scheduled scan completion notification failed:", error);
+  });
 }
 
 declare global {
@@ -121,7 +125,11 @@ async function workQueue(): Promise<void> {
     try {
       await executeJob(next);
     } catch (error) {
-      await prisma.scan.update({ where: { id: next.id }, data: { status: "failed", error: error instanceof Error ? error.message : "Scan failed.", progressMessage: "Scan failed", jobPayload: null } });
+      const message = error instanceof Error ? error.message : "Scan failed.";
+      await prisma.scan.update({ where: { id: next.id }, data: { status: "failed", error: message, progressMessage: "Scan failed", jobPayload: null } });
+      await notifyScheduledScan(next.id, "failed", undefined, message).catch((notificationError) => {
+        console.error("Scheduled scan failure notification failed:", notificationError);
+      });
     }
   }
 }
