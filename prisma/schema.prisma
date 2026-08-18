@@ -53,3 +53,22 @@ model Scan {
   @@index([shop, createdAt])
   @@index([status, createdAt])
 }
+
+model ScanSchedule {
+  id                String   @id
+  shop              String
+  name              String
+  configurationJson String
+  frequency         String
+  hourUtc           Int
+  enabled           Boolean  @default(true)
+  nextRunAt         DateTime
+  lastRunAt         DateTime?
+  lastScanId        String?
+  lastError         String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([shop, createdAt])
+  @@index([enabled, nextRunAt])
+}
