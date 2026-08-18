@@ -85,6 +85,8 @@ npm run typecheck
 npm run build
 ```
 
-The current app includes Shopify OAuth/session storage, an embedded dashboard, scan persistence, protected artifacts, and deterministic live-versus-preview comparison. AI-written summaries and a production background-job queue remain future work.
+The current app includes Shopify OAuth/session storage, an embedded dashboard, a durable background scan queue, scan persistence, protected artifacts, and deterministic live-versus-preview comparison.
+
+Evidence-grounded AI explanations are optional. Set `OPENAI_API_KEY` in the production environment and optionally override `OPENAI_MODEL` (the default is `gpt-5.6-luna`). A merchant must explicitly enable AI for each scan; the option is off by default and discloses exactly which report facts are sent. Screenshots, passwords, theme source, and storefront URLs are excluded. Without a key—or if the AI request fails—the deterministic report and release recommendation still complete normally.
 
 Product decisions and architecture are documented in `docs/PRODUCT.md`, `docs/ARCHITECTURE.md`, and `docs/MVP.md`.

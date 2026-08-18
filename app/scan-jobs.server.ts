@@ -5,6 +5,7 @@ import { refreshArtifactUrls, runEmbeddedComparison, type EmbeddedScanResult } f
 import { auditChangedThemeAccessibility, compareThemeFiles } from "./theme-code.server";
 import type { ShopifyPageType, ViewportName } from "../src/domain";
 import { redactUrl } from "../src/normalize";
+import { generateAiReportExplanation } from "./ai-report.server";
 
 export type ScanJobPayload = {
   pagePaths: string[];
@@ -14,6 +15,7 @@ export type ScanJobPayload = {
   viewports: ViewportName[];
   storefrontPassword?: string;
   codeOnly: boolean;
+  explainWithAi: boolean;
 };
 
 function encryptionKey(): Buffer {
@@ -92,6 +94,10 @@ async function executeJob(scan: { id: string; shop: string; jobPayload: string |
   if (payload.codeOnly) {
     await updateProgress(scan.id, "Checking changed code for accessibility", 93);
     result.codeAccessibilityIssues = await auditChangedThemeAccessibility(admin, payload.comparisonThemeId, result.codeChanges.filter((change) => change.status !== "removed").map((change) => change.filename));
+  }
+  if (payload.explainWithAi && process.env.OPENAI_API_KEY) {
+    await updateProgress(scan.id, "Writing evidence-based report", 97);
+    result.aiExplanation = await generateAiReportExplanation(result);
   }
   await prisma.scan.update({ where: { id: scan.id }, data: { status: "completed", progress: 100, progressMessage: "Report ready", resultJson: JSON.stringify(result), jobPayload: null, error: null } });
 }

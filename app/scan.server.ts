@@ -6,6 +6,7 @@ import { runScan } from "../src/scanner";
 import prisma from "./db.server";
 import { artifactObjectKey, persistArtifact } from "./artifact-storage.server";
 import type { CodeAccessibilityIssue, ThemeCodeChange } from "./theme-code.server";
+import type { AiReportExplanation } from "./ai-report.server";
 
 export interface EmbeddedScanResult {
   scanId: string;
@@ -13,6 +14,7 @@ export interface EmbeddedScanResult {
   preview: PageScanResult[];
   codeChanges?: ThemeCodeChange[];
   codeAccessibilityIssues?: CodeAccessibilityIssue[];
+  aiExplanation?: AiReportExplanation;
 }
 
 export function shopArtifactKey(shop: string): string {

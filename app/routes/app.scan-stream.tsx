@@ -16,7 +16,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 export const action = async ({ request }: ActionFunctionArgs) => {
   const { admin, session } = await authenticate.admin(request);
   try {
-    const body = await request.json() as { pagePaths?: unknown; pagePath?: unknown; baselineThemeId?: unknown; comparisonThemeId?: unknown; storePassword?: unknown; viewports?: unknown; codeOnly?: unknown };
+    const body = await request.json() as { pagePaths?: unknown; pagePath?: unknown; baselineThemeId?: unknown; comparisonThemeId?: unknown; storePassword?: unknown; viewports?: unknown; codeOnly?: unknown; explainWithAi?: unknown };
     const pagePaths = normalizePagePaths(body.pagePaths, body.pagePath);
     const themes = await getStoreThemes(admin);
     const baselineTheme = themes.find((theme) => theme.id === body.baselineThemeId);
@@ -37,6 +37,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       viewports,
       storefrontPassword: typeof body.storePassword === "string" && body.storePassword ? body.storePassword : undefined,
       codeOnly,
+      explainWithAi: body.explainWithAi === true,
     });
     kickScanWorker();
     return Response.json({ scanId }, { status: 202 });
