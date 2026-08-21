@@ -1,46 +1,28 @@
-# MVP
+# MVP status
 
-## Current milestone: local live-versus-preview web scanner
+The hosted Shopify QA Agent MVP is feature complete for private beta.
 
-The scanner accepts one or more public page URLs and runs desktop and mobile checks.
+## Delivered
 
-The local Next.js interface accepts a published storefront URL and a full Shopify theme preview URL, runs identical checks against both, and displays screenshots and issues side by side. The API currently runs synchronously and stores screenshots under `public/scan-artifacts/`.
+- Embedded Shopify OAuth app with PostgreSQL session storage.
+- Published-versus-unpublished theme selection from Shopify Admin.
+- Theme source and template diff with section/file attribution.
+- Desktop and mobile Playwright scans with screenshots and deterministic QA findings.
+- Page discovery, multi-page selection, saved configurations, reruns, and scan history.
+- Durable background queue and accurate progress reporting.
+- Recurring schedules and optional email notifications.
+- Shopify-staff team roles for scans, schedules, and billing administration.
+- Shopify-managed plan detection and monthly scan/schedule usage limits.
+- Private Cloudflare R2 artifacts, retention cleanup, and uninstall data deletion.
+- Pre-push verification covering types, lint, tests, production build, and smoke startup.
 
-The comparison layer matches equivalent findings across themes and presents only new and resolved QA issues as changes. It also compares page metadata and provides an interactive screenshot overlay for visual changes that are not defects.
+## Private-beta exit criteria
 
-Shopify sections are detected through theme section containers. Each section receives a structural fingerprint and metrics for images, headings, buttons, links, and text. Accessibility and image findings are attributed to the nearest section so reports can explain which section changed and which regressions it introduced.
+- Compliance webhooks and public privacy/support pages are deployed.
+- A production scheduler invokes `/internal/scheduler` every five minutes.
+- Monitoring alerts on failed health checks and repeated scan failures.
+- A small set of real stores validates scan accuracy and runtime limits.
 
-Included:
+## After beta
 
-- screenshots;
-- console errors;
-- failed requests and HTTP errors;
-- axe-core accessibility checks;
-- basic metadata, SEO, DOM, and image checks;
-- bounded same-origin broken-link checks;
-- Shopify page-type detection;
-- redacted report URLs;
-- stable issue fingerprints;
-- normalized JSON output.
-
-## Next milestone: persistent scan jobs
-
-- PostgreSQL persistence and a separate worker process.
-- Store-level page discovery and explicit page selection.
-- Queued scan progress and durable report URLs.
-- Issue differences: new, resolved, and unchanged between live and preview.
-
-## Later milestones
-
-1. Shopify-specific product, variant, cart drawer, gallery, price, and sold-out rules.
-2. Evidence-grounded AI explanations and executive summaries.
-3. Shopify OAuth, embedded Admin UI, billing, teams, and schedules.
-
-## Acceptance criteria for this milestone
-
-- Multiple URLs scan successfully in one CLI invocation.
-- One browser process is reused for all page runs.
-- Sensitive preview query parameters never appear in JSON output.
-- Broken links are checked with strict limits and no recursive crawl.
-- Every issue has a deterministic fingerprint.
-- Build, automated tests, and an end-to-end public URL scan pass.
+Add Shopify billing plan configuration, onboarding, richer notifications, observability, and dedicated worker capacity based on measured usage.

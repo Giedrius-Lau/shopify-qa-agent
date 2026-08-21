@@ -43,6 +43,11 @@ The comparison separates findings into **New in preview**, **Resolved in preview
 - Stable issue fingerprints and sensitive URL token redaction
 - Normalized JSON output with severity summary
 - Basic SSRF protection for arbitrary URLs and redirects
+- Shopify theme and template source comparison with section/file attribution
+- Store page discovery and multi-page selection
+- Durable PostgreSQL scan queue, scan history, reruns, and saved configurations
+- Recurring schedules, email notifications, Shopify team roles, and plan usage limits
+- Private Cloudflare R2 artifact storage with authenticated retrieval
 
 ## Standalone scanner
 
@@ -84,6 +89,20 @@ npm test
 npm run typecheck
 npm run build
 ```
+
+Use `npm run verify:prepush` before every deployment. It runs type checking, linting, tests, a production build, and a server smoke test.
+
+## Production operations
+
+Production requires `DATABASE_URL`, Shopify credentials, `SCOPES`, `SHOPIFY_APP_URL`, and the private R2 credentials shown in `.env.example`. Set a random `CRON_SECRET` of at least 24 characters and invoke the scheduler endpoint every five minutes:
+
+```bash
+curl --fail --request POST \
+  --header "Authorization: Bearer $CRON_SECRET" \
+  https://theme-qa-agent.onrender.com/internal/scheduler
+```
+
+The endpoint only accepts the bearer header; never put the secret in a URL. `SCAN_RETENTION_DAYS` defaults to 90 days. Expired completed scans and their artifacts are deleted hourly, and uninstalling the app deletes all shop records and artifacts. Email delivery is enabled when `RESEND_API_KEY` and `NOTIFICATION_FROM_EMAIL` are configured.
 
 The current app includes Shopify OAuth/session storage, an embedded dashboard, a durable background scan queue, scan persistence, protected artifacts, and deterministic live-versus-preview comparison.
 

@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { DeleteObjectsCommand, GetObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 
 type R2Config = {
   accountId: string;
@@ -54,3 +54,15 @@ export async function readPersistedArtifact(objectKey: string): Promise<Uint8Arr
   }
 }
 
+export async function deletePersistedArtifacts(prefix: string): Promise<void> {
+  const config = r2Config();
+  if (!config) return;
+  const r2 = client(config);
+  let continuationToken: string | undefined;
+  do {
+    const listed = await r2.send(new ListObjectsV2Command({ Bucket: config.bucket, Prefix: prefix, ContinuationToken: continuationToken }));
+    const objects = (listed.Contents ?? []).flatMap((item) => item.Key ? [{ Key: item.Key }] : []);
+    if (objects.length) await r2.send(new DeleteObjectsCommand({ Bucket: config.bucket, Delete: { Objects: objects, Quiet: true } }));
+    continuationToken = listed.IsTruncated ? listed.NextContinuationToken : undefined;
+  } while (continuationToken);
+}

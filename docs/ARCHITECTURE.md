@@ -8,7 +8,7 @@ The application is a modular monolith in one repository:
 - Shopify OAuth and Prisma-backed session storage.
 - Playwright QA engine invoked server-side by authenticated app actions.
 - Prisma persistence backed by PostgreSQL in development and production through `DATABASE_URL`.
-- Shop-scoped local artifact storage in development; S3-compatible storage is recommended for production.
+- Shop-scoped local artifact storage in development and private Cloudflare R2 storage in production.
 
 The CLI and embedded app use the same deterministic QA engine.
 
@@ -36,9 +36,13 @@ Rule-specific evidence stays as structured JSON rather than requiring one databa
 
 Every app route authenticates through Shopify. The live storefront host is derived from the authenticated shop, scan records include the shop domain, and artifact responses verify both the scan identifier and shop ownership. Storefront passwords are ephemeral and preview secrets are redacted before persistence.
 
-## Future background jobs
+## Background jobs
 
-For the first hosted version, PostgreSQL can act as the queue. Workers claim pending page runs transactionally using `FOR UPDATE SKIP LOCKED`. Add Redis only after concurrency measurements justify it.
+PostgreSQL is the durable queue. The web process claims pending scans, recurring schedules, notification deliveries, and retention work. Health checks provide a fallback kick; production also calls the authenticated `/internal/scheduler` endpoint on a five-minute interval. Add a dedicated worker or Redis only after concurrency measurements justify it.
+
+## Data lifecycle
+
+Scan metadata and team settings are tenant-scoped by Shopify shop domain. Screenshots are private R2 objects and are only streamed after Shopify authentication and ownership checks. Completed scans expire after the configured retention window (90 days by default). The app-uninstalled webhook removes the shop's database records and artifact prefix idempotently.
 
 ## AI boundary
 

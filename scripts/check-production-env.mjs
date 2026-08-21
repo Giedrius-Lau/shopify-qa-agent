@@ -12,4 +12,9 @@ if (configuredR2.length > 0 && configuredR2.length < r2.length) {
   process.exit(1);
 }
 
+if (process.env.CRON_SECRET && process.env.CRON_SECRET.length < 24) {
+  console.error("CRON_SECRET must contain at least 24 characters.");
+  process.exit(1);
+}
+
 console.log("Production environment validation passed.");
