@@ -28,3 +28,12 @@ test("accepts structured output and removes actions with invented evidence", () 
 test("rejects malformed structured output", () => {
   assert.equal(parseAiReportExplanation('{"summary":1}', new Set(), "test-model"), undefined);
 });
+
+test("does not report transient browser deltas when theme files are identical", () => {
+  const issue = { type: "accessibility" as const, severity: "high" as const, rule: "color-contrast", message: "Contrast", fingerprint: "live-only" };
+  const page = { requestedUrl: "https://shop.test/", finalUrl: "https://shop.test/", viewport: "desktop" as const, viewportSize: { width: 1440, height: 900 }, status: 200, title: "Shop", metadata: { title: "Shop", description: null, canonical: null, lang: "en", h1Count: 1, imageCount: 0 }, issues: [issue], sections: [], screenshotPath: "/tmp/a.png", pageType: "home" as const, startedAt: "2026-08-22T00:00:00.000Z", durationMs: 100 };
+  const summary = buildAiReportFactPack({ scanId: "same-code", live: [page], preview: [{ ...page, issues: [], screenshotPath: "/tmp/b.png" }], codeChanges: [] });
+  assert.equal(summary.metrics.newConcerns, 0);
+  assert.equal(summary.metrics.resolvedConcerns, 0);
+  assert.equal(summary.releaseDecision, "ready");
+});

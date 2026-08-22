@@ -14,7 +14,9 @@ export interface EmbeddedScanResult {
   preview: PageScanResult[];
   codeChanges?: ThemeCodeChange[];
   codeAccessibilityIssues?: CodeAccessibilityIssue[];
+  aiExplanationRequested?: boolean;
   aiExplanation?: AiReportExplanation;
+  aiExplanationError?: string;
 }
 
 export function shopArtifactKey(shop: string): string {

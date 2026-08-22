@@ -46,16 +46,19 @@ export function buildReportSummary(result: SummaryInput): ReportSummary {
   let changedSections = 0;
   const comparedPages = new Set<string>();
 
+  const themesAreCodeIdentical = result.codeChanges !== undefined && result.codeChanges.length === 0;
   for (const live of result.live) {
     const pathname = pagePath(live);
     const preview = result.preview.find((candidate) => pagePath(candidate) === pathname && candidate.viewport === live.viewport);
     if (!preview) continue;
     comparedPages.add(pathname);
-    const issueDiff = compareIssues(live.issues, preview.issues);
-    added.push(...issueDiff.added.map((issue) => ({ issue, page: pathname, viewport: live.viewport })));
-    resolvedConcerns += issueDiff.resolved.length;
-    const sectionDiff = compareSections(live.sections, preview.sections);
-    changedSections += sectionDiff.changed.length + sectionDiff.added.length + sectionDiff.removed.length;
+    if (!themesAreCodeIdentical) {
+      const issueDiff = compareIssues(live.issues, preview.issues);
+      added.push(...issueDiff.added.map((issue) => ({ issue, page: pathname, viewport: live.viewport })));
+      resolvedConcerns += issueDiff.resolved.length;
+      const sectionDiff = compareSections(live.sections, preview.sections);
+      changedSections += sectionDiff.changed.length + sectionDiff.added.length + sectionDiff.removed.length;
+    }
   }
 
   const uniqueAdded = uniqueIssues(added);

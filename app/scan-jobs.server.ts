@@ -98,9 +98,15 @@ async function executeJob(scan: { id: string; shop: string; jobPayload: string |
     await updateProgress(scan.id, "Checking changed code for accessibility", 93);
     result.codeAccessibilityIssues = await auditChangedThemeAccessibility(admin, payload.comparisonThemeId, result.codeChanges.filter((change) => change.status !== "removed").map((change) => change.filename));
   }
-  if (payload.explainWithAi && process.env.OPENAI_API_KEY) {
+  result.aiExplanationRequested = payload.explainWithAi;
+  if (payload.explainWithAi) {
     await updateProgress(scan.id, "Writing evidence-based report", 97);
-    result.aiExplanation = await generateAiReportExplanation(result);
+    if (!process.env.OPENAI_API_KEY) {
+      result.aiExplanationError = "AI explanation is not available because the OpenAI connection is not configured.";
+    } else {
+      result.aiExplanation = await generateAiReportExplanation(result);
+      if (!result.aiExplanation) result.aiExplanationError = "The AI explanation could not be generated. The deterministic QA report is still complete.";
+    }
   }
   await prisma.scan.update({ where: { id: scan.id }, data: { status: "completed", progress: 100, progressMessage: "Report ready", resultJson: JSON.stringify(result), jobPayload: null, error: null } });
   await notifyScheduledScan(scan.id, "completed", result).catch((error) => {
