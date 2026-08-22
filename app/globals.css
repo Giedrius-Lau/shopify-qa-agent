@@ -9,6 +9,7 @@ h1 { font-size:clamp(42px,7vw,78px); line-height:.98; letter-spacing:-.055em; ma
 .scan-form { border:1px solid var(--line); background:var(--panel); border-radius:16px; padding:24px; }
 .field-grid,.comparison-grid { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
 label span,legend { display:block; font-size:13px; font-weight:700; margin-bottom:9px; }
+.field-label { display:flex; align-items:center; gap:7px; }.live-badge { padding:2px 6px; border-radius:999px; background:#e5f4df; color:var(--green); font-size:9px; letter-spacing:.08em; }.live-theme-option { color:var(--green); font-weight:700; }
 input:not([type=checkbox]):not([type=range]),select { width:100%; background:var(--bg); border:1px solid var(--line); color:var(--text); padding:14px; border-radius:8px; font-size:14px; outline:none; }
 input:not([type=checkbox]):not([type=range]):focus,select:focus { border-color:var(--green); }
 input[readonly] { color:var(--muted); }
