@@ -56,7 +56,13 @@ export function compareThemeFileLists(baseline: ThemeFileSnapshot[], comparison:
   return filenames.flatMap((filename): ThemeCodeChange[] => {
     const live = before.get(filename);
     const preview = after.get(filename);
-    const sameContent = live && preview && (live.checksumMd5 && preview.checksumMd5 ? live.checksumMd5 === preview.checksumMd5 : String(live.size) === String(preview.size) && live.updatedAt === preview.updatedAt);
+    const sameContent = Boolean(live && preview && (
+      live.checksumMd5 && preview.checksumMd5
+        ? live.checksumMd5 === preview.checksumMd5
+        : live.updatedAt && preview.updatedAt
+          ? String(live.size) === String(preview.size) && live.updatedAt === preview.updatedAt
+          : false
+    ));
     if (sameContent) return [];
     const status = !live ? "added" : !preview ? "removed" : "changed";
     const kind = fileKind(filename);
