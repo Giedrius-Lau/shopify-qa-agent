@@ -1,4 +1,4 @@
-import { compareIssues, compareSections } from "./compare";
+import { compareIssues, compareSections, sectionKey } from "./compare";
 import type { PageScanResult, QaIssue, Severity, ViewportName } from "./domain";
 
 export type ReleaseDecision = "ready" | "review" | "blocked";
@@ -43,7 +43,7 @@ function uniqueIssues(issues: Array<{ issue: QaIssue; page: string; viewport: Vi
 export function buildReportSummary(result: SummaryInput): ReportSummary {
   const added: Array<{ issue: QaIssue; page: string; viewport: ViewportName }> = [];
   let resolvedConcerns = 0;
-  let changedSections = 0;
+  const changedSectionKeys = new Set<string>();
   const comparedPages = new Set<string>();
 
   const themesAreCodeIdentical = result.codeChanges !== undefined && result.codeChanges.length === 0;
@@ -57,7 +57,9 @@ export function buildReportSummary(result: SummaryInput): ReportSummary {
       added.push(...issueDiff.added.map((issue) => ({ issue, page: pathname, viewport: live.viewport })));
       resolvedConcerns += issueDiff.resolved.length;
       const sectionDiff = compareSections(live.sections, preview.sections);
-      changedSections += sectionDiff.changed.length + sectionDiff.added.length + sectionDiff.removed.length;
+      for (const section of sectionDiff.changed) changedSectionKeys.add(`${pathname}|changed|${section.key}`);
+      for (const section of sectionDiff.added) changedSectionKeys.add(`${pathname}|added|${sectionKey(section.id, section.name)}`);
+      for (const section of sectionDiff.removed) changedSectionKeys.add(`${pathname}|removed|${sectionKey(section.id, section.name)}`);
     }
   }
 
@@ -86,7 +88,7 @@ export function buildReportSummary(result: SummaryInput): ReportSummary {
     pagesCompared: comparedPages.size,
     newConcerns: uniqueAdded.length + codePriorities.length,
     resolvedConcerns,
-    changedSections,
+    changedSections: changedSectionKeys.size,
     changedFiles: (result.codeChanges ?? []).filter((change) => change.status !== "unchanged").length,
     priorities,
   };

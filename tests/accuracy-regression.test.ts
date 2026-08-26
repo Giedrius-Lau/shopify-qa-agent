@@ -97,6 +97,30 @@ test("one section edit reports only that section and its template file", () => {
   assert.equal(codeChanges[0]?.scope, "current-page");
 });
 
+test("counts a changed section once across desktop and mobile", () => {
+  const desktopBaseline = page();
+  const desktopComparison = page({
+    sections: [section({ imageCount: 5, structureFingerprint: "changed-structure" })],
+  });
+  const mobileBaseline = page({
+    viewport: "mobile",
+    viewportSize: { width: 390, height: 844 },
+  });
+  const mobileComparison = page({
+    viewport: "mobile",
+    viewportSize: { width: 390, height: 844 },
+    sections: [section({ imageCount: 5, structureFingerprint: "changed-structure" })],
+  });
+
+  const summary = buildReportSummary({
+    live: [desktopBaseline, mobileBaseline],
+    preview: [desktopComparison, mobileComparison],
+    codeChanges: [{ status: "changed" }],
+  });
+
+  assert.equal(summary.changedSections, 1);
+});
+
 test("missing checksums are not treated as proof that equal-size files are identical", () => {
   const changes = compareThemeFileLists(
     [{ filename: "sections/hero.liquid", checksumMd5: null, size: 200 }],
